@@ -1,0 +1,7 @@
+# Persoenliche Trainingsdaten - gehoeren nicht ins oeffentliche Repo
+gym-backup-*.json
+
+# lokale Werkzeuge / macOS
+.claude/
+.DS_Store
+server.log

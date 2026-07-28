@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Gym">
+<meta name="theme-color" content="#0e0f13">
+<title>Gym Tracker</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-180.png">
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  :root {
+    --bg: #0e0f13;
+    --surface: #171922;
+    --surface-2: #1f2230;
+    --line: #2b2f3f;
+    --text: #eef0f6;
+    --muted: #8d93a8;
+    --accent: #c8ff3d;
+    --accent-ink: #16210a;
+    --danger: #ff5c6a;
+    --radius: 14px;
+  }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 17px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    padding-bottom: calc(78px + env(safe-area-inset-bottom));
+    overscroll-behavior-y: none;
+    /* App-Gefuehl: kein Doppeltipp-Zoom, keine Textmarkierung, kein Lupen-Menue */
+    touch-action: manipulation;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+  button, input, select { font: inherit; color: inherit; }
+  button { cursor: pointer; border: none; background: none; }
+  input { -webkit-user-select: text; user-select: text; }
+
+  header {
+    position: sticky; top: 0; z-index: 20;
+    background: rgba(14,15,19,.86);
+    backdrop-filter: saturate(160%) blur(14px);
+    border-bottom: 1px solid var(--line);
+    padding: calc(10px + env(safe-area-inset-top))
+             calc(18px + env(safe-area-inset-right)) 10px
+             calc(18px + env(safe-area-inset-left));
+    display: flex; align-items: baseline; gap: 10px;
+  }
+  header h1 { font-size: 20px; margin: 0; letter-spacing: -.02em; }
+  header .sub { color: var(--muted); font-size: 13px; margin-left: auto; }
+
+  main {
+    padding: 16px calc(18px + env(safe-area-inset-right)) 16px calc(18px + env(safe-area-inset-left));
+    max-width: 640px; margin: 0 auto;
+  }
+  .view { display: none; }
+  /* Nur opacity animieren: ein transform auf .view wuerde einen Containing Block
+     erzeugen und den fixierten Speichern-Button darin einsperren. */
+  .view.active { display: block; animation: fade .18s ease; }
+  @keyframes fade { from { opacity: 0; } }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 14px;
+    margin-bottom: 14px;
+  }
+  label.fld { display: block; margin-bottom: 14px; }
+  label.fld > span {
+    display: block; font-size: 12px; text-transform: uppercase;
+    letter-spacing: .08em; color: var(--muted); margin-bottom: 6px; font-weight: 600;
+  }
+  input, select {
+    width: 100%; background: var(--surface-2); border: 1px solid var(--line);
+    border-radius: 10px; padding: 12px 12px; outline: none;
+  }
+  input:focus, select:focus { border-color: var(--accent); }
+  select { appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: calc(100% - 18px) 50%, calc(100% - 13px) 50%; background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; padding-right: 36px; }
+
+  /* Touch-Ziele >= 44pt (Apple HIG) – auf dem Pro Max ist Platz fuer mehr */
+  .stepper { display: flex; align-items: stretch; gap: 6px; }
+  .stepper input {
+    flex: 1 1 0; min-width: 0; width: 100%;
+    text-align: center; font-size: 23px; font-weight: 700;
+    font-variant-numeric: tabular-nums; padding: 12px 2px;
+    -moz-appearance: textfield;
+  }
+  .stepper input::-webkit-outer-spin-button,
+  .stepper input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .stepper button {
+    flex: 0 0 clamp(44px, 12vw, 56px); min-height: 52px;
+    background: var(--surface-2); border: 1px solid var(--line);
+    border-radius: 10px; font-size: 24px; font-weight: 600; color: var(--text);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .stepper button:active { background: var(--line); }
+
+  .btn {
+    display: block; width: 100%; background: var(--accent); color: var(--accent-ink);
+    font-weight: 700; font-size: 18px; padding: 17px; border-radius: 12px; letter-spacing: -.01em;
+  }
+  .btn:active { transform: scale(.985); }
+
+  /* Speichern liegt fest ueber der Tab-Leiste – auf einem 6,7"-Display waere
+     er oben in der Karte ausserhalb der Daumenzone, sobald die Liste waechst.
+     Als Kind von #view-log verschwindet er automatisch in den anderen Tabs. */
+  .savebar {
+    position: fixed; z-index: 15;
+    left: 0; right: 0; max-width: 640px; margin: 0 auto;
+    bottom: calc(82px + env(safe-area-inset-bottom));
+    padding: 0 calc(18px + env(safe-area-inset-right)) 0 calc(18px + env(safe-area-inset-left));
+  }
+  .savebar::before {
+    content: ""; position: absolute; left: 0; right: 0; top: -22px; bottom: -26px;
+    background: linear-gradient(rgba(14,15,19,0), rgba(14,15,19,.93) 32%, rgba(14,15,19,.93));
+    pointer-events: none; z-index: -1;
+  }
+  /* Platz, damit der letzte Satz nicht unter dem Button endet */
+  #view-log { padding-bottom: 84px; }
+  .btn.ghost { background: transparent; border: 1px solid var(--line); color: var(--text); font-weight: 600; font-size: 15px; padding: 12px; }
+  .btn.ghost:active { background: var(--surface-2); }
+
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .row2 > * { min-width: 0; }
+  /* auf sehr schmalen Geraeten (SE) bliebe fuers Zahlenfeld zu wenig uebrig */
+  @media (max-width: 360px) { .row2 { grid-template-columns: 1fr; } }
+  .hint { color: var(--muted); font-size: 13px; margin: -6px 0 14px; }
+  .hint b { color: var(--accent); font-weight: 600; }
+
+  .exgroup { margin-bottom: 12px; }
+  .exgroup h3 {
+    font-size: 15px; margin: 0 0 8px; display: flex; align-items: center; gap: 8px;
+  }
+  .exgroup h3 .pill { margin-left: auto; font-size: 11px; color: var(--muted); font-weight: 500; }
+  .setrow {
+    display: flex; align-items: center; gap: 10px; padding: 10px 6px 10px 13px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px; margin-bottom: 7px;
+  }
+  .setrow .idx {
+    flex: 0 0 26px; height: 26px; border-radius: 7px; background: var(--surface-2);
+    display: grid; place-items: center; font-size: 12px; color: var(--muted); font-weight: 700;
+  }
+  .setrow .val { font-weight: 700; font-variant-numeric: tabular-nums; font-size: 17px; }
+  /* volle 44pt Trefferflaeche, ohne die Zeile aufzublaehen */
+  .setrow .x {
+    margin: -10px -6px -10px auto; width: 46px; align-self: stretch;
+    display: grid; place-items: center;
+    color: var(--muted); font-size: 22px; line-height: 1;
+  }
+  .setrow .x:active { color: var(--danger); }
+  .best { color: var(--accent); }
+
+  .day { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); margin-bottom: 10px; overflow: hidden; }
+  .day > summary {
+    padding: 13px 14px; cursor: pointer; list-style: none;
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .day > summary::-webkit-details-marker { display: none; }
+  .day .date { font-weight: 700; font-size: 15px; }
+  .day .meta { color: var(--muted); font-size: 13px; }
+  .day .body { padding: 0 14px 14px; border-top: 1px solid var(--line); padding-top: 12px; }
+
+  .empty { text-align: center; color: var(--muted); padding: 44px 20px; }
+  .empty .big { font-size: 40px; display: block; margin-bottom: 10px; }
+
+  .statrow { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .statrow:last-child { border-bottom: none; }
+  .statrow .nm { font-weight: 600; }
+  .statrow .nm small { display: block; color: var(--muted); font-weight: 400; font-size: 12px; }
+  .statrow .pr { margin-left: auto; text-align: right; font-variant-numeric: tabular-nums; }
+  .statrow .pr b { color: var(--accent); font-size: 17px; }
+  .statrow .pr small { display: block; color: var(--muted); font-size: 11px; }
+
+  nav {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 30;
+    display: flex; background: rgba(23,25,34,.92);
+    backdrop-filter: saturate(160%) blur(14px);
+    border-top: 1px solid var(--line);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  nav button {
+    flex: 1; padding: 12px 4px 14px; min-height: 56px; color: var(--muted);
+    font-size: 11px; font-weight: 600; display: flex; flex-direction: column; align-items: center; gap: 3px;
+  }
+  nav button svg { width: 24px; height: 24px; stroke: currentColor; fill: none; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+  nav button.active { color: var(--accent); }
+
+  .toast {
+    position: fixed; left: 50%; bottom: calc(152px + env(safe-area-inset-bottom));
+    transform: translate(-50%, 14px); z-index: 50;
+    background: var(--accent); color: var(--accent-ink); font-weight: 700; font-size: 14px;
+    padding: 11px 18px; border-radius: 999px; opacity: 0; pointer-events: none;
+    transition: opacity .2s, transform .2s; white-space: nowrap; max-width: 90vw;
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+  .toast.warn { background: var(--danger); color: #fff; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Gym Tracker</h1>
+  <span class="sub" id="headerSub"></span>
+</header>
+
+<main>
+  <!-- ============ TRAINING ============ -->
+  <section id="view-log" class="view active">
+    <div class="card">
+      <label class="fld">
+        <span>Maschine / Übung</span>
+        <select id="exercise"></select>
+      </label>
+      <p class="hint" id="lastHint"></p>
+
+      <div class="row2">
+        <label class="fld">
+          <span>Gewicht (kg)</span>
+          <div class="stepper">
+            <button type="button" data-step="weight" data-delta="-2.5">−</button>
+            <input id="weight" type="number" inputmode="decimal" step="0.5" min="0" value="20">
+            <button type="button" data-step="weight" data-delta="2.5">+</button>
+          </div>
+        </label>
+        <label class="fld">
+          <span>Wiederholungen</span>
+          <div class="stepper">
+            <button type="button" data-step="reps" data-delta="-1">−</button>
+            <input id="reps" type="number" inputmode="numeric" step="1" min="1" value="10">
+            <button type="button" data-step="reps" data-delta="1">+</button>
+          </div>
+        </label>
+      </div>
+
+    </div>
+
+    <div class="savebar">
+      <button class="btn" id="saveSet">Satz speichern</button>
+    </div>
+
+    <div id="todayList"></div>
+  </section>
+
+  <!-- ============ VERLAUF ============ -->
+  <section id="view-history" class="view">
+    <div id="historyList"></div>
+  </section>
+
+  <!-- ============ STATISTIK ============ -->
+  <section id="view-stats" class="view">
+    <div class="card" id="statsCard"></div>
+    <button class="btn ghost" id="exportBtn" style="margin-bottom:10px">Daten exportieren (Backup)</button>
+    <button class="btn ghost" id="importBtn" style="margin-bottom:10px">Backup importieren</button>
+    <input type="file" id="importFile" accept="application/json,.json" hidden>
+    <button class="btn ghost" id="wipeBtn" style="color:var(--danger)">Alle Daten löschen</button>
+  </section>
+</main>
+
+<nav>
+  <button data-view="log" class="active">
+    <svg viewBox="0 0 24 24"><path d="M4 9v6M20 9v6M7 6v12M17 6v12M7 12h10"/></svg>
+    Training
+  </button>
+  <button data-view="history">
+    <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7M3 4v4h4"/><path d="M12 7v5l3 2"/></svg>
+    Verlauf
+  </button>
+  <button data-view="stats">
+    <svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+    Statistik
+  </button>
+</nav>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  var KEY = "gymTracker.v1";
+  var DEFAULT_EXERCISES = [
+    "Beinpresse", "Beinstrecker", "Beinbeuger", "Wadenheben",
+    "Brustpresse", "Butterfly", "Schulterpresse", "Seitheben",
+    "Latzug", "Rudermaschine", "Rückenstrecker", "Bauchmaschine",
+    "Bizepsmaschine", "Trizepsdrücken", "Kniebeuge", "Bankdrücken",
+    "Kreuzheben", "Klimmzüge"
+  ];
+
+  // ---------- Daten ----------
+  var db = load();
+
+  function load() {
+    try {
+      var raw = localStorage.getItem(KEY);
+      if (raw) {
+        var d = JSON.parse(raw);
+        if (d && Array.isArray(d.sets)) {
+          d.exercises = Array.isArray(d.exercises) ? d.exercises : [];
+          return d;
+        }
+      }
+    } catch (e) { /* korrupte Daten: frisch starten */ }
+    return { sets: [], exercises: DEFAULT_EXERCISES.slice() };
+  }
+
+  function save() {
+    try {
+      localStorage.setItem(KEY, JSON.stringify(db));
+    } catch (e) {
+      toast("Speichern fehlgeschlagen – Speicher voll?", true);
+    }
+  }
+
+  function todayKey() {
+    var d = new Date();
+    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+  }
+  function pad(n) { return n < 10 ? "0" + n : "" + n; }
+
+  function fmtWeight(w) {
+    return (Math.round(w * 10) / 10).toString().replace(".", ",");
+  }
+
+  function fmtDate(key) {
+    var p = key.split("-");
+    var d = new Date(+p[0], +p[1] - 1, +p[2]);
+    var days = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
+    var t = todayKey();
+    var yd = new Date(); yd.setDate(yd.getDate() - 1);
+    var ydKey = yd.getFullYear() + "-" + pad(yd.getMonth() + 1) + "-" + pad(yd.getDate());
+    var label = days[d.getDay()] + ", " + p[2] + "." + p[1] + "." + p[0];
+    if (key === t) return "Heute · " + label;
+    if (key === ydKey) return "Gestern · " + label;
+    return label;
+  }
+
+  // ---------- DOM ----------
+  var $ = function (id) { return document.getElementById(id); };
+  var exSel = $("exercise"), weightIn = $("weight"), repsIn = $("reps");
+
+  // ---------- Übungsliste ----------
+  function allExercises() {
+    var seen = {}, out = [];
+    db.exercises.concat(db.sets.map(function (s) { return s.exercise; }))
+      .forEach(function (n) {
+        if (n && !seen[n.toLowerCase()]) { seen[n.toLowerCase()] = 1; out.push(n); }
+      });
+    return out.sort(function (a, b) { return a.localeCompare(b, "de"); });
+  }
+
+  function renderExercises(selected) {
+    var cur = selected || exSel.value;
+    exSel.innerHTML = "";
+    allExercises().forEach(function (n) {
+      var o = document.createElement("option");
+      o.value = n; o.textContent = n;
+      exSel.appendChild(o);
+    });
+    var o = document.createElement("option");
+    o.value = "__new__"; o.textContent = "＋ Neue Übung anlegen …";
+    exSel.appendChild(o);
+    if (cur && cur !== "__new__") exSel.value = cur;
+    if (!exSel.value) exSel.selectedIndex = 0;
+    updateHint();
+  }
+
+  exSel.addEventListener("change", function () {
+    if (exSel.value === "__new__") {
+      var name = (prompt("Name der Maschine / Übung:") || "").trim();
+      if (name) {
+        var exists = allExercises().filter(function (n) { return n.toLowerCase() === name.toLowerCase(); })[0];
+        if (exists) { renderExercises(exists); }
+        else { db.exercises.push(name); save(); renderExercises(name); }
+      } else {
+        renderExercises(lastUsedExercise());
+      }
+    } else {
+      updateHint();
+      prefillFromLast();
+    }
+  });
+
+  function lastUsedExercise() {
+    return db.sets.length ? db.sets[db.sets.length - 1].exercise : null;
+  }
+
+  function lastSetFor(ex) {
+    for (var i = db.sets.length - 1; i >= 0; i--) {
+      if (db.sets[i].exercise === ex) return db.sets[i];
+    }
+    return null;
+  }
+
+  function bestFor(ex) {
+    var best = null;
+    db.sets.forEach(function (s) {
+      if (s.exercise !== ex) return;
+      if (!best || s.weight > best.weight || (s.weight === best.weight && s.reps > best.reps)) best = s;
+    });
+    return best;
+  }
+
+  function updateHint() {
+    var ex = exSel.value;
+    var last = ex && ex !== "__new__" ? lastSetFor(ex) : null;
+    if (!last) { $("lastHint").textContent = "Noch keine Sätze für diese Übung."; return; }
+    var best = bestFor(ex);
+    var txt = "Zuletzt: " + fmtWeight(last.weight) + " kg × " + last.reps;
+    if (last.date !== todayKey()) txt += " (" + last.date.split("-").reverse().slice(0, 2).join(".") + ")";
+    if (best && (best.weight !== last.weight || best.reps !== last.reps)) {
+      txt += " · Best: " + fmtWeight(best.weight) + " kg × " + best.reps;
+    }
+    $("lastHint").innerHTML = txt.replace(/Best: ([^·]+)/, "Best: <b>$1</b>");
+  }
+
+  function prefillFromLast() {
+    var last = lastSetFor(exSel.value);
+    if (last) { weightIn.value = last.weight; repsIn.value = last.reps; }
+  }
+
+  // ---------- Stepper ----------
+  document.querySelectorAll("[data-step]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var input = $(b.dataset.step);
+      var delta = parseFloat(b.dataset.delta);
+      var v = (parseFloat(input.value) || 0) + delta;
+      var min = b.dataset.step === "reps" ? 1 : 0;
+      input.value = Math.max(min, Math.round(v * 10) / 10);
+      haptic();
+    });
+  });
+
+  // ---------- Satz speichern ----------
+  $("saveSet").addEventListener("click", function () {
+    var ex = exSel.value;
+    if (!ex || ex === "__new__") { toast("Bitte Übung wählen", true); return; }
+    var w = parseFloat(weightIn.value);
+    var r = parseInt(repsIn.value, 10);
+    if (isNaN(w) || w < 0) { toast("Gewicht ungültig", true); return; }
+    if (isNaN(r) || r < 1) { toast("Wiederholungen ungültig", true); return; }
+
+    var prevBest = bestFor(ex);
+    db.sets.push({
+      id: Date.now() + "-" + Math.random().toString(36).slice(2, 7),
+      date: todayKey(),
+      ts: Date.now(),
+      exercise: ex,
+      weight: Math.round(w * 10) / 10,
+      reps: r
+    });
+    save();
+    renderAll();
+    haptic();
+
+    var isPR = !prevBest || w > prevBest.weight || (w === prevBest.weight && r > prevBest.reps);
+    toast(isPR ? "🔥 Neue Bestleistung!" : "Satz gespeichert");
+  });
+
+  function deleteSet(id) {
+    db.sets = db.sets.filter(function (s) { return s.id !== id; });
+    save();
+    renderAll();
+    toast("Satz gelöscht");
+  }
+
+  // ---------- Rendering ----------
+  function groupByExercise(sets) {
+    var order = [], map = {};
+    sets.forEach(function (s) {
+      if (!map[s.exercise]) { map[s.exercise] = []; order.push(s.exercise); }
+      map[s.exercise].push(s);
+    });
+    return order.map(function (n) { return { name: n, sets: map[n] }; });
+  }
+
+  function volume(sets) {
+    return sets.reduce(function (a, s) { return a + s.weight * s.reps; }, 0);
+  }
+
+  function nSets(n) { return n + (n === 1 ? " Satz" : " Sätze"); }
+
+  // Gesamtvolumen kompakt: kg bis 1 t, danach Tonnen mit einer Nachkommastelle
+  function fmtVolume(kg) {
+    if (kg < 1000) return Math.round(kg) + " kg";
+    var t = kg / 1000;
+    return (t < 100 ? t.toFixed(1).replace(".", ",") : Math.round(t)) + " t";
+  }
+
+  function setRowsHTML(sets, deletable) {
+    return sets.map(function (s, i) {
+      return '<div class="setrow">' +
+        '<div class="idx">' + (i + 1) + '</div>' +
+        '<div class="val">' + fmtWeight(s.weight) + ' kg</div>' +
+        '<div style="color:var(--muted)">×</div>' +
+        '<div class="val">' + s.reps + '</div>' +
+        (deletable ? '<button class="x" data-del="' + s.id + '" aria-label="Satz löschen">×</button>' : '') +
+        '</div>';
+    }).join("");
+  }
+
+  function renderToday() {
+    var sets = db.sets.filter(function (s) { return s.date === todayKey(); });
+    var el = $("todayList");
+    if (!sets.length) {
+      el.innerHTML = '<div class="empty"><span class="big">🏋️</span>Noch kein Satz heute.<br>Leg los!</div>';
+      return;
+    }
+    var html = '<div class="card"><div style="display:flex;gap:8px;align-items:baseline;margin-bottom:12px">' +
+      '<strong>Heute</strong><span style="margin-left:auto;color:var(--muted);font-size:13px">' +
+      nSets(sets.length) + ' · ' + Math.round(volume(sets)).toLocaleString("de-DE") + ' kg Volumen</span></div>';
+    groupByExercise(sets).forEach(function (g) {
+      html += '<div class="exgroup"><h3>' + esc(g.name) +
+        '<span class="pill">' + nSets(g.sets.length) + '</span></h3>' +
+        setRowsHTML(g.sets, true) + '</div>';
+    });
+    html += "</div>";
+    el.innerHTML = html;
+  }
+
+  function renderHistory() {
+    var el = $("historyList");
+    var days = {};
+    db.sets.forEach(function (s) { (days[s.date] = days[s.date] || []).push(s); });
+    var keys = Object.keys(days).sort().reverse();
+    if (!keys.length) {
+      el.innerHTML = '<div class="empty"><span class="big">📅</span>Noch keine Trainings aufgezeichnet.</div>';
+      return;
+    }
+    el.innerHTML = keys.map(function (k, i) {
+      var sets = days[k];
+      var body = groupByExercise(sets).map(function (g) {
+        return '<div class="exgroup"><h3>' + esc(g.name) +
+          '<span class="pill">' + nSets(g.sets.length) + '</span></h3>' +
+          setRowsHTML(g.sets, true) + '</div>';
+      }).join("");
+      return '<details class="day"' + (i === 0 ? " open" : "") + '>' +
+        '<summary><span class="date">' + fmtDate(k) + '</span>' +
+        '<span class="meta">' + nSets(sets.length) + ' · ' + Math.round(volume(sets)).toLocaleString("de-DE") + ' kg</span></summary>' +
+        '<div class="body">' + body + '</div></details>';
+    }).join("");
+  }
+
+  function renderStats() {
+    var el = $("statsCard");
+    if (!db.sets.length) {
+      el.innerHTML = '<div class="empty" style="padding:24px"><span class="big">📊</span>Noch keine Daten.</div>';
+      return;
+    }
+    var days = {};
+    db.sets.forEach(function (s) { days[s.date] = 1; });
+    var byEx = {};
+    db.sets.forEach(function (s) {
+      var e = byEx[s.exercise] = byEx[s.exercise] || { count: 0, best: null, last: null };
+      e.count++;
+      if (!e.best || s.weight > e.best.weight || (s.weight === e.best.weight && s.reps > e.best.reps)) e.best = s;
+      e.last = s;
+    });
+    var names = Object.keys(byEx).sort(function (a, b) { return byEx[b].count - byEx[a].count; });
+
+    var head = '<div style="display:flex;gap:14px;margin-bottom:16px;text-align:center">' +
+      statTile(Object.keys(days).length, Object.keys(days).length === 1 ? "Training" : "Trainings") +
+      statTile(db.sets.length, db.sets.length === 1 ? "Satz" : "Sätze") +
+      statTile(fmtVolume(volume(db.sets)), "Volumen") +
+      '</div>';
+
+    el.innerHTML = head + names.map(function (n) {
+      var e = byEx[n];
+      return '<div class="statrow"><div class="nm">' + esc(n) +
+        '<small>' + nSets(e.count) + ' · zuletzt ' + e.last.date.split("-").reverse().slice(0, 2).join(".") + '</small></div>' +
+        '<div class="pr"><b>' + fmtWeight(e.best.weight) + ' kg</b><small>× ' + e.best.reps + ' Best</small></div></div>';
+    }).join("");
+  }
+
+  function statTile(v, label) {
+    return '<div style="flex:1;background:var(--surface-2);border-radius:10px;padding:12px 6px">' +
+      '<div style="font-size:22px;font-weight:800;letter-spacing:-.02em">' + v + '</div>' +
+      '<div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">' + label + '</div></div>';
+  }
+
+  function renderAll() {
+    renderExercises();
+    renderToday();
+    renderHistory();
+    renderStats();
+    var days = {};
+    db.sets.forEach(function (s) { days[s.date] = 1; });
+    var n = Object.keys(days).length;
+    $("headerSub").textContent = n ? n + (n === 1 ? " Training" : " Trainings") : "";
+  }
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  // Löschen (delegiert, für beide Listen)
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest ? e.target.closest("[data-del]") : null;
+    if (b) deleteSet(b.dataset.del);
+  });
+
+  // ---------- Navigation ----------
+  document.querySelectorAll("nav button").forEach(function (b) {
+    b.addEventListener("click", function () {
+      document.querySelectorAll("nav button").forEach(function (x) { x.classList.remove("active"); });
+      document.querySelectorAll(".view").forEach(function (x) { x.classList.remove("active"); });
+      b.classList.add("active");
+      $("view-" + b.dataset.view).classList.add("active");
+      window.scrollTo(0, 0);
+    });
+  });
+
+  // ---------- Backup ----------
+  $("exportBtn").addEventListener("click", function () {
+    var blob = new Blob([JSON.stringify(db, null, 2)], { type: "application/json" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "gym-backup-" + todayKey() + ".json";
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+  });
+
+  $("importBtn").addEventListener("click", function () { $("importFile").click(); });
+  $("importFile").addEventListener("change", function (e) {
+    var f = e.target.files[0];
+    if (!f) return;
+    var r = new FileReader();
+    r.onload = function () {
+      try {
+        var d = JSON.parse(r.result);
+        if (!d || !Array.isArray(d.sets)) throw new Error("bad");
+        if (!confirm("Backup mit " + d.sets.length + " Sätzen importieren? Die aktuellen Daten werden ersetzt.")) return;
+        db = { sets: d.sets, exercises: Array.isArray(d.exercises) ? d.exercises : [] };
+        save(); renderAll(); toast("Backup importiert");
+      } catch (err) {
+        toast("Datei nicht lesbar", true);
+      }
+    };
+    r.readAsText(f);
+    e.target.value = "";
+  });
+
+  $("wipeBtn").addEventListener("click", function () {
+    if (!confirm("Wirklich ALLE Trainingsdaten löschen? Das lässt sich nicht rückgängig machen.")) return;
+    if (!confirm("Sicher? Exportiere vorher ein Backup, falls du die Daten behalten willst.")) return;
+    db = { sets: [], exercises: DEFAULT_EXERCISES.slice() };
+    save(); renderAll(); toast("Alle Daten gelöscht");
+  });
+
+  // ---------- Feedback ----------
+  var toastTimer;
+  function toast(msg, warn) {
+    var t = $("toast");
+    t.textContent = msg;
+    t.className = "toast show" + (warn ? " warn" : "");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.className = "toast"; }, 1800);
+  }
+  function haptic() { if (navigator.vibrate) navigator.vibrate(8); }
+
+  // ---------- Service Worker (nur ueber http/https, nicht bei file://) ----------
+  if ("serviceWorker" in navigator && location.protocol.indexOf("http") === 0) {
+    window.addEventListener("load", function () {
+      navigator.serviceWorker.register("sw.js").catch(function () { /* offline-Modus optional */ });
+    });
+  }
+
+  // ---------- Start ----------
+  renderAll();
+  var lu = lastUsedExercise();
+  if (lu) { renderExercises(lu); prefillFromLast(); }
+})();
+</script>
+</body>
+</html>

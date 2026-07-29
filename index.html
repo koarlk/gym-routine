@@ -287,6 +287,60 @@
   }
   .statrow .pr small { color: var(--dim); font-size: 12px; font-weight: 500; }
 
+  /* ---------------- Trainingseinheit ---------------- */
+  .startcard {
+    background: var(--card); border-radius: var(--r-lg); padding: 30px 22px 24px;
+    margin-bottom: 16px; text-align: center;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .045);
+  }
+  .startcard h2 {
+    font-size: 21px; font-weight: 700; letter-spacing: -.03em; margin: 0 0 6px;
+  }
+  .startcard p { margin: 0 0 22px; color: var(--muted); font-size: 14.5px; }
+  .startcard .btn { max-width: 320px; margin: 0 auto; }
+
+  .summary {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+    margin: 0 0 22px;
+  }
+  .summary div { background: var(--card-2); border-radius: var(--r-sm); padding: 12px 6px; }
+  .summary .v {
+    font-size: 19px; font-weight: 750; letter-spacing: -.035em;
+    font-variant-numeric: tabular-nums;
+  }
+  .summary .k { font-size: 11.5px; color: var(--dim); font-weight: 500; margin-top: 2px; }
+  .startcard .done {
+    display: inline-flex; align-items: center; gap: 7px; margin-bottom: 14px;
+    padding: 6px 14px 6px 10px; border-radius: 999px;
+    background: var(--accent-soft); color: var(--accent);
+    font-size: 13px; font-weight: 650;
+  }
+  .startcard .done svg { width: 15px; height: 15px; stroke: currentColor; stroke-width: 2.4; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+
+  .sessionbar {
+    display: flex; align-items: center; gap: 12px;
+    background: var(--card); border-radius: var(--r-md);
+    padding: 12px 12px 12px 16px; margin-bottom: 14px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .045);
+  }
+  .sessionbar .live {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex: none;
+    animation: pulse 2.2s ease-in-out infinite;
+  }
+  @keyframes pulse { 50% { opacity: .28; } }
+  .sessionbar .txt { min-width: 0; line-height: 1.25; }
+  .sessionbar .txt b { display: block; font-size: 12.5px; color: var(--muted); font-weight: 600; }
+  .sessionbar .time {
+    font-size: 19px; font-weight: 700; letter-spacing: -.03em;
+    font-variant-numeric: tabular-nums;
+  }
+  .sessionbar .stop {
+    margin-left: auto; flex: none; padding: 11px 17px; border-radius: 12px;
+    background: var(--card-2); color: var(--text); font-size: 14.5px; font-weight: 650;
+    transition: background .15s;
+  }
+  .sessionbar .stop:active { background: var(--raise); }
+
   /* ---------------- Übersicht ---------------- */
   .streak {
     display: flex; align-items: center; gap: 18px;
@@ -445,7 +499,9 @@
 <main>
   <!-- ============ TRAINING ============ -->
   <section id="view-log" class="view active">
-    <div class="card">
+    <div id="sessionArea"></div>
+
+    <div class="card" id="inputCard">
       <div class="picker">
         <div class="cap">Maschine / Übung</div>
         <select id="exercise" aria-label="Maschine oder Übung"></select>
@@ -552,11 +608,16 @@
         if (d && Array.isArray(d.sets)) {
           d.exercises = Array.isArray(d.exercises) ? d.exercises : [];
           d.settings = normSettings(d.settings);
+          d.workouts = (d.workouts && typeof d.workouts === "object") ? d.workouts : {};
+          d.session = (d.session && d.session.start) ? d.session : null;
           return d;
         }
       }
     } catch (e) { /* korrupte Daten: frisch starten */ }
-    return { sets: [], exercises: DEFAULT_EXERCISES.slice(), settings: normSettings(null) };
+    return {
+      sets: [], exercises: DEFAULT_EXERCISES.slice(),
+      settings: normSettings(null), workouts: {}, session: null
+    };
   }
 
   // Wochenziel: 1–7 Trainingstage, Standard 3
@@ -680,6 +741,154 @@
     if (last) { weightIn.value = last.weight; repsIn.value = last.reps; }
   }
 
+  // ---------- Trainingseinheit ----------
+  var ticker = null;
+  var MAX_SESSION_H = 6;   // laenger vergessene Einheiten werden automatisch beendet
+
+  function fmtClock(sec) {
+    var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+    return h ? h + ":" + pad(m) + ":" + pad(s) : m + ":" + pad(s);
+  }
+
+  function fmtDauer(sec) {
+    if (sec < 60) return "unter 1 Min";
+    var m = Math.round(sec / 60);
+    if (m < 60) return m + " Min";
+    var h = Math.floor(m / 60), r = m % 60;
+    return h + " Std" + (r ? " " + r + " Min" : "");
+  }
+
+  // knappe Form fuer die Kachel
+  function fmtDauerKurz(sec) {
+    if (sec < 60) return "<1 Min";
+    var m = Math.round(sec / 60);
+    return m < 60 ? m + " Min" : Math.floor(m / 60) + ":" + pad(m % 60) + " h";
+  }
+
+  function sessionSecs() {
+    return db.session ? Math.max(0, Math.floor((Date.now() - db.session.start) / 1000)) : 0;
+  }
+
+  function setsOfSession() {
+    if (!db.session) return [];
+    return db.sets.filter(function (s) { return s.ts >= db.session.start; });
+  }
+
+  function startSession() {
+    db.session = { start: Date.now() };
+    save();
+    renderAll();
+    startTicker();
+    haptic();
+    toast("Training gestartet", "good");
+  }
+
+  // Beendet die Einheit und schreibt die Dauer auf den Tag. Mehrere Einheiten
+  // am selben Tag werden aufsummiert.
+  function endSession(silent) {
+    if (!db.session) return;
+    var sets = setsOfSession();
+    var sec = sessionSecs();
+    var k = todayKey();
+    if (sets.length) {
+      var w = db.workouts[k] || { sec: 0, start: db.session.start, end: 0 };
+      w.sec += sec;
+      w.start = Math.min(w.start || db.session.start, db.session.start);
+      w.end = Date.now();
+      db.workouts[k] = w;
+    }
+    db.session = null;
+    stopTicker();
+    save();
+    renderAll();
+    if (!silent) {
+      haptic();
+      toast(sets.length
+        ? fmtDauer(sec) + " · " + nSets(sets.length) + " · " + Math.round(volume(sets)).toLocaleString("de-DE") + " kg"
+        : "Training verworfen", sets.length ? "good" : "");
+    }
+  }
+
+  function startTicker() {
+    stopTicker();
+    ticker = setInterval(function () {
+      var el = document.getElementById("sessionTime");
+      if (!el) { stopTicker(); return; }
+      el.textContent = fmtClock(sessionSecs());
+    }, 1000);
+  }
+  function stopTicker() { if (ticker) { clearInterval(ticker); ticker = null; } }
+
+  function renderSession() {
+    var el = $("sessionArea");
+    var card = $("inputCard");
+    var bar = document.querySelector(".savebar");
+
+    if (db.session) {
+      el.innerHTML = '<div class="sessionbar"><span class="live"></span>' +
+        '<div class="txt"><b>Training läuft</b>' +
+        '<span class="time" id="sessionTime">' + fmtClock(sessionSecs()) + '</span></div>' +
+        '<button class="stop" id="endSession">Beenden</button></div>';
+      card.style.display = "";
+      bar.style.display = "";
+      return;
+    }
+
+    // keine Einheit aktiv – Startkarte, bei bereits erledigtem Training mit Bilanz
+    card.style.display = "none";
+    bar.style.display = "none";
+    var k = todayKey();
+    var w = db.workouts[k];
+    var todaySets = db.sets.filter(function (s) { return s.date === k; });
+    var check = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+
+    if (w && todaySets.length) {
+      el.innerHTML = '<div class="startcard">' +
+        '<span class="done">' + check + 'Heute trainiert</span>' +
+        '<div class="summary">' +
+        '<div><div class="v">' + fmtDauerKurz(w.sec) + '</div><div class="k">Dauer</div></div>' +
+        '<div><div class="v">' + todaySets.length + '</div><div class="k">' + (todaySets.length === 1 ? "Satz" : "Sätze") + '</div></div>' +
+        '<div><div class="v">' + fmtVolume(volume(todaySets)) + '</div><div class="k">Volumen</div></div>' +
+        '</div><button class="btn" id="startSession">Weiteres Training starten</button></div>';
+    } else {
+      el.innerHTML = '<div class="startcard"><h2>Bereit?</h2>' +
+        '<p>Starte die Einheit, um Sätze einzutragen.</p>' +
+        '<button class="btn" id="startSession">Training starten</button></div>';
+    }
+  }
+
+  // Start/Beenden (delegiert, da die Karte neu gerendert wird)
+  document.addEventListener("click", function (e) {
+    if (!e.target.closest) return;
+    if (e.target.closest("#startSession")) { startSession(); return; }
+    if (e.target.closest("#endSession")) {
+      var n = setsOfSession().length;
+      if (!n && !confirm("Training ohne eingetragene Sätze beenden?")) return;
+      endSession();
+    }
+  });
+
+  // Nach einer Pause (App geschlossen) weiterlaufen lassen bzw. aufraeumen
+  function resumeSession() {
+    if (!db.session) return;
+    if (Date.now() - db.session.start > MAX_SESSION_H * 3600 * 1000) {
+      var sets = setsOfSession();
+      var last = sets.length ? sets[sets.length - 1].ts : db.session.start;
+      var k = todayKey();
+      if (sets.length) {
+        var w = db.workouts[k] || { sec: 0, start: db.session.start, end: 0 };
+        w.sec += Math.floor((last - db.session.start) / 1000);
+        w.end = last;
+        db.workouts[k] = w;
+      }
+      db.session = null;
+      save();
+      toast("Vergessenes Training beendet");
+      return;
+    }
+    startTicker();
+  }
+
   // ---------- Stepper ----------
   document.querySelectorAll("[data-step]").forEach(function (b) {
     b.addEventListener("click", function () {
@@ -694,6 +903,7 @@
 
   // ---------- Satz speichern ----------
   $("saveSet").addEventListener("click", function () {
+    if (!db.session) { toast("Erst Training starten", "warn"); return; }
     var ex = exSel.value;
     if (!ex || ex === "__new__") { toast("Bitte Übung wählen", "warn"); return; }
     var w = parseFloat(weightIn.value);
@@ -726,13 +936,19 @@
   }
 
   // ---------- Rendering ----------
+  // Gruppiert nach Übung, zuletzt trainierte zuerst. Die Sätze innerhalb einer
+  // Gruppe bleiben chronologisch – gedreht wird erst beim Rendern, damit die
+  // Satznummern stimmen.
   function groupByExercise(sets) {
     var order = [], map = {};
     sets.forEach(function (s) {
       if (!map[s.exercise]) { map[s.exercise] = []; order.push(s.exercise); }
       map[s.exercise].push(s);
     });
-    return order.map(function (n) { return { name: n, sets: map[n] }; });
+    return order.map(function (n) {
+      var g = map[n];
+      return { name: n, sets: g, last: g[g.length - 1].ts };
+    }).sort(function (a, b) { return b.last - a.last; });
   }
 
   function volume(sets) {
@@ -752,9 +968,9 @@
     return groupByExercise(sets).map(function (g) {
       return '<div class="exgroup"><h3>' + esc(g.name) +
         '<span class="pill">' + nSets(g.sets.length) + '</span></h3>' +
-        g.sets.map(function (s, i) {
+        g.sets.slice().reverse().map(function (s, i) {
           return '<div class="setrow">' +
-            '<div class="idx">' + (i + 1) + '</div>' +
+            '<div class="idx">' + (g.sets.length - i) + '</div>' +
             '<div class="load">' + fmtWeight(s.weight) + '<span class="u">kg</span></div>' +
             '<div class="times">×</div>' +
             '<div class="load">' + s.reps + '</div>' +
@@ -769,9 +985,10 @@
     var sets = db.sets.filter(function (s) { return s.date === todayKey(); });
     var el = $("todayList");
     if (!sets.length) {
-      el.innerHTML = '<div class="empty">' +
+      // ohne laufende Einheit spricht schon die Startkarte – kein zweiter Hinweis
+      el.innerHTML = db.session ? '<div class="empty">' +
         '<svg viewBox="0 0 24 24"><path d="M4 9v6M20 9v6M7 6v12M17 6v12M7 12h10"/></svg>' +
-        '<p><b>Noch kein Satz heute</b>Trag deinen ersten Satz ein.</p></div>';
+        '<p><b>Noch kein Satz</b>Trag deinen ersten Satz ein.</p></div>' : "";
       return;
     }
     el.innerHTML = '<div class="card flush">' +
@@ -793,9 +1010,10 @@
     }
     el.innerHTML = keys.map(function (k, i) {
       var sets = days[k];
+      var w = db.workouts[k];
       return '<details class="day"' + (i === 0 ? " open" : "") + '>' +
         '<summary>' + ICON_CHEV + '<span class="date">' + fmtDate(k) + '</span>' +
-        '<span class="meta">' + nSets(sets.length) + ' · ' +
+        '<span class="meta">' + (w && w.sec ? fmtDauer(w.sec) + ' · ' : '') + nSets(sets.length) + ' · ' +
         Math.round(volume(sets)).toLocaleString("de-DE") + ' kg</span></summary>' +
         '<div class="body">' + groupsHTML(sets) + '</div></details>';
     }).join("");
@@ -1014,6 +1232,7 @@
 
   function renderAll() {
     renderExercises();
+    renderSession();
     renderToday();
     renderOverview();
     renderHistory();
@@ -1070,7 +1289,9 @@
         db = {
           sets: d.sets,
           exercises: Array.isArray(d.exercises) ? d.exercises : [],
-          settings: normSettings(d.settings)
+          settings: normSettings(d.settings),
+          workouts: (d.workouts && typeof d.workouts === "object") ? d.workouts : {},
+          session: null
         };
         save(); renderAll(); toast("Backup importiert", "good");
       } catch (err) {
@@ -1084,7 +1305,11 @@
   $("wipeBtn").addEventListener("click", function () {
     if (!confirm("Wirklich ALLE Trainingsdaten löschen? Das lässt sich nicht rückgängig machen.")) return;
     if (!confirm("Sicher? Exportiere vorher ein Backup, falls du die Daten behalten willst.")) return;
-    db = { sets: [], exercises: DEFAULT_EXERCISES.slice(), settings: normSettings(db.settings) };
+    db = {
+      sets: [], exercises: DEFAULT_EXERCISES.slice(),
+      settings: normSettings(db.settings), workouts: {}, session: null
+    };
+    stopTicker();
     save(); renderAll(); toast("Alle Daten gelöscht");
   });
 
@@ -1107,6 +1332,7 @@
   }
 
   // ---------- Start ----------
+  resumeSession();
   renderAll();
   var lu = lastUsedExercise();
   if (lu) { renderExercises(lu); prefillFromLast(); }

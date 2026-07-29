@@ -4,10 +4,10 @@
 Starten:  python3 serve.py
 Beenden:  Ctrl-C
 """
-import http.server, os, socket, socketserver
+import functools, http.server, os, socket, socketserver
 
 PORT = 8765
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.abspath(__file__))
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -32,7 +32,11 @@ def lan_ip():
 
 
 socketserver.TCPServer.allow_reuse_address = True
-with socketserver.TCPServer(("0.0.0.0", PORT), Handler) as httpd:
+# Wurzelverzeichnis fest vorgeben: der Standardhandler ruft sonst bei jedem
+# Request os.getcwd() auf, was unter macOS in geschuetzten Ordnern
+# (Schreibtisch, Dokumente) mit "Operation not permitted" scheitert.
+handler = functools.partial(Handler, directory=ROOT)
+with socketserver.TCPServer(("0.0.0.0", PORT), handler) as httpd:
     print("\n  Gym Tracker laeuft.\n")
     print("  Am Mac:     http://localhost:%d" % PORT)
     print("  Am iPhone:  http://%s:%d   (gleiches WLAN)\n" % (lan_ip(), PORT))

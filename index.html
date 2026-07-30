@@ -507,6 +507,25 @@
     background: none; border-radius: 0; font-size: 12.5px; color: var(--dim);
   }
 
+  /* Bilanz Druecken / Ziehen */
+  .split { margin: 2px 0 16px; }
+  .split .track {
+    display: flex; height: 12px; border-radius: 999px; overflow: hidden;
+    background: rgba(255, 255, 255, .05);
+  }
+  .split .track i { height: 100%; }
+  .split .track .push { background: var(--accent); }
+  .split .track .pull { background: var(--accent-2); }
+  .split .track .neut { background: var(--dim); }
+  .split .track .open { background: rgba(255, 255, 255, .13); }
+  .split .leg {
+    display: flex; flex-wrap: wrap; gap: 4px 13px; margin-top: 10px;
+    font-size: 12.5px; color: var(--muted); font-weight: 500;
+  }
+  .split .leg span { display: inline-flex; align-items: center; gap: 6px; }
+  .split .leg i { width: 9px; height: 9px; border-radius: 3px; flex: none; }
+  .split .leg b { color: var(--text); font-weight: 650; font-variant-numeric: tabular-nums; }
+
   /* abgeleitete Gruppen am Trainingstag */
   .daytags {
     display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px;
@@ -515,6 +534,7 @@
     font-size: 11px; font-weight: 650; color: var(--muted);
     background: var(--card-2); border-radius: 999px; padding: 3px 9px;
   }
+  .daytags .mv { background: var(--accent-soft); color: var(--accent); }
 
   /* Hinweis auf unzugeordnete Maschinen */
   .untagged {
@@ -546,7 +566,15 @@
     margin: 0 0 4px; font-size: 19px; font-weight: 700; letter-spacing: -.03em;
   }
   .sheet p { margin: 0 0 16px; font-size: 13.5px; color: var(--muted); }
+  .sheet .lbl {
+    font-size: 12.5px; color: var(--muted); font-weight: 600;
+    margin: 4px 0 8px; letter-spacing: -.01em;
+  }
+  .sheet .lbl + .opts { margin-bottom: 18px; }
   .sheet .opts { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+  .sheet .opts.three { grid-template-columns: repeat(3, 1fr); }
+  .sheet .opts.three button { padding: 15px 4px; font-size: 14.5px; }
+  .sheet .btn { margin-top: 2px; }
   .sheet .opts button {
     padding: 16px 10px; border-radius: var(--r-sm); background: var(--card-2);
     font-size: 15.5px; font-weight: 600; letter-spacing: -.01em;
@@ -715,7 +743,7 @@
   <div class="card">
     <h3 id="sheetTitle">Muskelgruppe</h3>
     <p id="sheetSub"></p>
-    <div class="opts" id="sheetOpts"></div>
+    <div id="sheetBody"></div>
     <button class="cancel" type="button" data-sheet-close>Abbrechen</button>
   </div>
 </div>
@@ -758,6 +786,20 @@
     return "Nicht zugeordnet";
   }
 
+  // Zweite, unabhaengige Achse. Bewusst nicht aus der Muskelgruppe abgeleitet:
+  // Shoulder Press und Reverse Fly sind beide "Schultern", aber Druecken bzw.
+  // Ziehen. "Beine" fehlt hier absichtlich – das ist eine Muskelgruppe, keine
+  // Bewegung, sonst faellt Beintraining aus der Bilanz.
+  var MOVES = [
+    { k: "push", n: "Drücken" },
+    { k: "pull", n: "Ziehen" },
+    { k: "neutral", n: "Neutral" }
+  ];
+  function moveName(k) {
+    for (var i = 0; i < MOVES.length; i++) if (MOVES[i].k === k) return MOVES[i].n;
+    return "Ohne Angabe";
+  }
+
   var ICON_X = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>';
   var ICON_CHEV = '<svg class="chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>';
 
@@ -776,6 +818,7 @@
           d.session = (d.session && d.session.start) ? d.session : null;
           d.backup = (d.backup && typeof d.backup === "object") ? d.backup : { at: 0, due: 0 };
           d.groups = (d.groups && typeof d.groups === "object") ? d.groups : {};
+          d.moves = (d.moves && typeof d.moves === "object") ? d.moves : {};
           return migrate(d);
         }
       }
@@ -786,7 +829,7 @@
   function leer() {
     return {
       sets: [], exercises: DEFAULT_EXERCISES.slice(), settings: normSettings(null),
-      workouts: {}, session: null, backup: { at: 0, due: 0 }, groups: {}, v: 2
+      workouts: {}, session: null, backup: { at: 0, due: 0 }, groups: {}, moves: {}, v: 2
     };
   }
 
@@ -845,26 +888,59 @@
   // ---------- Muskelgruppe wählen ----------
   var sheetCb = null;
 
+  var classifyName = null, classifyDone = null;
+
+  // Aktionsmenue: schliesst sofort bei der Auswahl
   function openSheet(title, sub, opts, cb) {
     sheetCb = cb;
+    classifyName = null;
     $("sheetTitle").textContent = title;
     $("sheetSub").textContent = sub;
-    $("sheetOpts").innerHTML = opts.map(function (o) {
+    $("sheetBody").innerHTML = '<div class="opts">' + opts.map(function (o) {
       return '<button type="button" data-opt="' + o.k + '"' +
         (o.on ? ' class="on"' : "") + '>' + esc(o.n) + '</button>';
-    }).join("");
+    }).join("") + '</div>';
     $("sheet").hidden = false;
   }
 
-  function pickGroup(name, cb) {
-    openSheet("Muskelgruppe", "„" + name + "“ zählt beim Volumen zu dieser Gruppe.",
-      GROUPS.map(function (g) {
-        return { k: g.k, n: g.n, on: g.k === (db.groups[name] || "") };
-      }), cb);
+  // Einordnen: beide Achsen in einem Blatt, Bestaetigen per Knopf.
+  // Teilweise Angabe ist erlaubt – sonst waere das Blatt eine Sackgasse.
+  function openClassify(name, done) {
+    sheetCb = null;
+    classifyName = name;
+    classifyDone = done || null;
+    var g = db.groups[name] || "", m = db.moves[name] || "";
+    function feld(set, liste, aktiv) {
+      return '<div class="opts' + (liste.length === 3 ? " three" : "") + '" data-set="' + set + '">' +
+        liste.map(function (o) {
+          return '<button type="button" data-pick="' + o.k + '"' +
+            (o.k === aktiv ? ' class="on"' : "") + '>' + esc(o.n) + '</button>';
+        }).join("") + '</div>';
+    }
+    $("sheetTitle").textContent = name;
+    $("sheetSub").textContent = "Bestimmt, wie diese Maschine in die Auswertung eingeht.";
+    $("sheetBody").innerHTML =
+      '<div class="lbl">Muskelgruppe</div>' + feld("grp", GROUPS, g) +
+      '<div class="lbl">Bewegung</div>' + feld("mov", MOVES, m) +
+      '<button class="btn" type="button" id="sheetOk">Übernehmen</button>';
+    $("sheet").hidden = false;
+  }
+
+  function applyClassify() {
+    var g = $("sheetBody").querySelector('[data-set="grp"] .on');
+    var m = $("sheetBody").querySelector('[data-set="mov"] .on');
+    if (g) db.groups[classifyName] = g.dataset.pick;
+    if (m) db.moves[classifyName] = m.dataset.pick;
+    var done = classifyDone;
+    classifyName = null; classifyDone = null;
+    $("sheet").hidden = true;
+    save(); renderAll();
+    if (done) done();
   }
 
   function closeSheet() {
     $("sheet").hidden = true;
+    classifyName = null; classifyDone = null;
     var cb = sheetCb;
     sheetCb = null;
     return cb;
@@ -873,6 +949,19 @@
   document.addEventListener("click", function (e) {
     if (!e.target.closest) return;
     if (e.target.closest("[data-sheet-close]")) { closeSheet(); return; }
+    if (e.target.closest("#sheetOk")) { applyClassify(); return; }
+
+    // Auswahl im Formular: markieren, aber nicht schliessen
+    var pick = e.target.closest("[data-pick]");
+    if (pick) {
+      var box = pick.parentElement;
+      [].forEach.call(box.querySelectorAll("[data-pick]"), function (b) {
+        b.classList.remove("on");
+      });
+      pick.classList.add("on");
+      return;
+    }
+
     var g = e.target.closest("[data-opt]");
     if (!g) return;
     var cb = closeSheet();
@@ -890,20 +979,18 @@
     return m;
   }
 
+  // Unvollstaendig ist, wem mindestens eine der beiden Angaben fehlt
   function ohneGruppe() {
-    return allExercises().filter(function (n) { return !db.groups[n]; });
+    return allExercises().filter(function (n) { return !db.groups[n] || !db.moves[n]; });
   }
 
   // Der Reihe nach durchgehen, damit der Altbestand in einem Rutsch wegkommt
   function zuordnenReihe() {
     var offen = ohneGruppe();
-    if (!offen.length) { toast("Alles zugeordnet", "good"); return; }
-    var name = offen[0];
-    pickGroup(name, function (k) {
-      db.groups[name] = k;
-      save(); renderAll();
+    if (!offen.length) { toast("Alles eingeordnet", "good"); return; }
+    openClassify(offen[0], function () {
       if (ohneGruppe().length) zuordnenReihe();
-      else toast("Alles zugeordnet", "good");
+      else toast("Alles eingeordnet", "good");
     });
   }
 
@@ -948,11 +1035,7 @@
           save();
           renderExercises(name);
           // direkt einordnen, damit kein unzugeordneter Bestand entsteht
-          pickGroup(name, function (k) {
-            db.groups[name] = k;
-            save(); renderAll(); renderExercises(name);
-            toast(groupName(k));
-          });
+          openClassify(name, function () { renderExercises(name); });
         }
       } else {
         renderExercises(lastUsedExercise());
@@ -1359,10 +1442,7 @@
 
   // ---------- Übung umbenennen / löschen ----------
   function setzeGruppe(name) {
-    pickGroup(name, function (k) {
-      db.groups[name] = k;
-      save(); renderAll(); toast(groupName(k));
-    });
+    openClassify(name);
   }
 
   function loescheUebung(name, anzahl) {
@@ -1373,6 +1453,7 @@
     }
     db.exercises = db.exercises.filter(function (n) { return n !== name; });
     delete db.groups[name];
+    delete db.moves[name];
     save(); renderAll(); toast("Übung gelöscht");
   }
 
@@ -1395,7 +1476,9 @@
     db.exercises = db.exercises.filter(function (n) { return n !== name; });
     if (db.exercises.indexOf(eingabe) === -1) db.exercises.push(eingabe);
     if (!db.groups[eingabe] && db.groups[name]) db.groups[eingabe] = db.groups[name];
+    if (!db.moves[eingabe] && db.moves[name]) db.moves[eingabe] = db.moves[name];
     delete db.groups[name];
+    delete db.moves[name];
     save(); renderAll(); renderExercises(eingabe);
     toast(kollision ? "Zusammengeführt" : "Übung umbenannt");
   }
@@ -1404,8 +1487,9 @@
     var name = exSel.value;
     if (!name || name === "__new__") { toast("Keine Übung gewählt", "warn"); return; }
     var anzahl = db.sets.filter(function (s) { return s.exercise === name; }).length;
-    openSheet(name, groupName(db.groups[name] || "") + " · " + nSets(anzahl), [
-      { k: "grp", n: "Muskelgruppe" },
+    openSheet(name, groupName(db.groups[name] || "") + " · " + moveName(db.moves[name] || "") +
+      " · " + nSets(anzahl), [
+      { k: "grp", n: "Einordnen" },
       { k: "ren", n: "Umbenennen" },
       { k: "del", n: "Löschen" }
     ], function (aktion) {
@@ -1489,13 +1573,34 @@
 
   // Trainingstags entstehen aus den trainierten Uebungen, nicht aus Handarbeit:
   // Gruppen nach Volumenanteil, hoechstens drei genannt.
+  // Push, wenn ueber 60 % des zugeordneten Volumens auf Druecken entfaellt.
+  // Neutrales zaehlt nicht mit, sonst verwaessert ein Bauchtag jede Einheit.
+  function moveTag(sets) {
+    var p = 0, z = 0;
+    sets.forEach(function (s) {
+      var k = db.moves[s.exercise], v = s.weight * s.reps;
+      if (k === "push") p += v; else if (k === "pull") z += v;
+    });
+    var g = p + z;
+    if (!g) return "";
+    if (p / g > 0.6) return "Push";
+    if (z / g > 0.6) return "Pull";
+    return "Gemischt";
+  }
+
   function dayTagsHTML(sets) {
+    var zeige = [];
+    var mv = moveTag(sets);
+    if (mv) zeige.push('<span class="mv">' + mv + "</span>");
+
     var m = volumeByGroup(sets);
     var ks = Object.keys(m).filter(function (k) { return k; })
       .sort(function (a, b) { return m[b] - m[a]; });
-    if (!ks.length) return "";
-    var zeige = ks.slice(0, 3).map(function (k) { return "<span>" + groupName(k) + "</span>"; });
+    zeige = zeige.concat(ks.slice(0, 3).map(function (k) {
+      return "<span>" + groupName(k) + "</span>";
+    }));
     if (ks.length > 3) zeige.push("<span>+" + (ks.length - 3) + "</span>");
+    if (!zeige.length) return "";
     return '<div class="daytags">' + zeige.join("") + "</div>";
   }
 
@@ -1734,8 +1839,37 @@
       zeilen.sort(function (a, b) { return b.v - a.v; });
       var max = zeilen[0].v || 1;
 
-      html += '<div class="card"><div class="section-head"><h2>Muskelgruppen</h2>' +
-        '<span class="meta">Anteil am Volumen</span></div><div class="dist">' +
+      // Bilanz Druecken / Ziehen – unzugeordnetes bleibt als eigenes Segment
+      // sichtbar, statt sich unter "Neutral" zu verstecken
+      var bew = {};
+      recent.forEach(function (s) {
+        var k = db.moves[s.exercise] || "";
+        bew[k] = (bew[k] || 0) + s.weight * s.reps;
+      });
+      var segs = [
+        { c: "push", n: "Drücken", v: bew.push || 0 },
+        { c: "pull", n: "Ziehen", v: bew.pull || 0 },
+        { c: "neut", n: "Neutral", v: bew.neutral || 0 },
+        { c: "open", n: "Ohne Angabe", v: bew[""] || 0 }
+      ].filter(function (x) { return x.v > 0; });
+
+      html += '<div class="card"><div class="section-head"><h2>Verteilung</h2>' +
+        '<span class="meta">Anteil am Volumen</span></div>';
+
+      if (segs.length) {
+        html += '<div class="split"><div class="track">' +
+          segs.map(function (x) {
+            return '<i class="' + x.c + '" style="width:' + (x.v / gesamt * 100) + '%"></i>';
+          }).join("") + '</div><div class="leg">' +
+          segs.map(function (x) {
+            return '<span><i class="' + x.c + '" style="background:' +
+              (x.c === "push" ? "var(--accent)" : x.c === "pull" ? "var(--accent-2)" :
+               x.c === "neut" ? "var(--dim)" : "rgba(255,255,255,.13)") + '"></i>' +
+              x.n + ' <b>' + Math.round(x.v / gesamt * 100) + ' %</b></span>';
+          }).join("") + '</div></div>';
+      }
+
+      html += '<div class="dist">' +
         zeilen.map(function (z) {
           var pct = Math.round(z.v / gesamt * 100);
           return '<div class="row' + (z.v ? "" : " zero") + (z.none ? " none" : "") + '">' +
@@ -1821,6 +1955,8 @@
     // Zuordnungen ebenso: eine alte Datei ueberschreibt keine neuere Gruppe
     var gr = (d.groups && typeof d.groups === "object") ? d.groups : {};
     Object.keys(gr).forEach(function (n) { if (!db.groups[n]) db.groups[n] = gr[n]; });
+    var mv = (d.moves && typeof d.moves === "object") ? d.moves : {};
+    Object.keys(mv).forEach(function (n) { if (!db.moves[n]) db.moves[n] = mv[n]; });
     return neu;
   }
 
@@ -1829,7 +1965,7 @@
   function exportDaten() {
     var kopie = {
       sets: db.sets, exercises: db.exercises, settings: db.settings,
-      workouts: db.workouts, groups: db.groups, v: db.v
+      workouts: db.workouts, groups: db.groups, moves: db.moves, v: db.v
     };
     var json = JSON.stringify(kopie, null, 2);
     var name = "gym-backup-" + todayKey() + ".json";

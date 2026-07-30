@@ -507,7 +507,7 @@
     background: none; border-radius: 0; font-size: 12.5px; color: var(--dim);
   }
 
-  /* Bilanz Druecken / Ziehen */
+  /* Bilanz Push / Pull */
   .split { margin: 2px 0 16px; }
   .split .track {
     display: flex; height: 12px; border-radius: 999px; overflow: hidden;
@@ -791,8 +791,8 @@
   // Ziehen. "Beine" fehlt hier absichtlich – das ist eine Muskelgruppe, keine
   // Bewegung, sonst faellt Beintraining aus der Bilanz.
   var MOVES = [
-    { k: "push", n: "Drücken" },
-    { k: "pull", n: "Ziehen" },
+    { k: "push", n: "Push" },
+    { k: "pull", n: "Pull" },
     { k: "neutral", n: "Neutral" }
   ];
   function moveName(k) {
@@ -1839,7 +1839,7 @@
       zeilen.sort(function (a, b) { return b.v - a.v; });
       var max = zeilen[0].v || 1;
 
-      // Bilanz Druecken / Ziehen – unzugeordnetes bleibt als eigenes Segment
+      // Bilanz Push / Pull – unzugeordnetes bleibt als eigenes Segment
       // sichtbar, statt sich unter "Neutral" zu verstecken
       var bew = {};
       recent.forEach(function (s) {
@@ -1847,8 +1847,8 @@
         bew[k] = (bew[k] || 0) + s.weight * s.reps;
       });
       var segs = [
-        { c: "push", n: "Drücken", v: bew.push || 0 },
-        { c: "pull", n: "Ziehen", v: bew.pull || 0 },
+        { c: "push", n: "Push", v: bew.push || 0 },
+        { c: "pull", n: "Pull", v: bew.pull || 0 },
         { c: "neut", n: "Neutral", v: bew.neutral || 0 },
         { c: "open", n: "Ohne Angabe", v: bew[""] || 0 }
       ].filter(function (x) { return x.v > 0; });

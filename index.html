@@ -255,23 +255,56 @@
     background: var(--card); border-radius: var(--r-lg); margin-bottom: 12px;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, .045); overflow: hidden;
   }
+  /* Block statt Flex-Zeile: vorher rutschten die Kennzahlen je nach Textlaenge
+     mal neben das Datum, mal darunter – dadurch waren die Karten unterschiedlich
+     hoch und nichts fluchtete. Jede Zeile hat jetzt eine feste Aufgabe. */
   .day > summary {
-    padding: 17px 18px; cursor: pointer; list-style: none;
-    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 15px 18px 16px; cursor: pointer; list-style: none; display: block;
   }
-  /* Etiketten auf eine eigene Zeile, sonst quetschen sich Datum,
-     Kennzahlen und Tags in drei schmale Spalten */
-  .day > summary .daytags { flex-basis: 100%; margin-top: 2px; }
   .day > summary::-webkit-details-marker { display: none; }
+  .day > summary .daytags { margin: 0 0 9px; }
+  .day .dline { display: flex; align-items: center; gap: 10px; }
   .day .date { font-weight: 650; font-size: 16px; letter-spacing: -.02em; }
-  .day .meta { margin-left: auto; color: var(--dim); font-size: 13px; font-weight: 500; }
+  /* Einzeilig mit Auslassung: lange Maschinennamen wuerden sonst umbrechen und
+     die Karten waeren wieder unterschiedlich hoch – genau das sollte weg. */
+  .day .exs {
+    margin-top: 5px; font-size: 13.5px; line-height: 1.35;
+    color: var(--muted); font-weight: 500;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .day .nums {
+    margin-top: 4px; font-size: 12.5px; color: var(--dim); font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
   .day .chev {
+    margin-left: auto;
     flex: none; width: 16px; height: 16px; stroke: var(--dim); stroke-width: 2.2;
     fill: none; stroke-linecap: round; stroke-linejoin: round;
     transition: transform .22s ease;
   }
   .day[open] .chev { transform: rotate(90deg); }
   .day .body { padding: 2px 18px 18px; }
+
+  /* Nachtragen. Das Datumsfeld liegt unsichtbar ueber dem Knopf – so oeffnet
+     ein Tipp direkt die native Datumsauswahl, ohne eigene Kalender-Oberflaeche. */
+  .addday { position: relative; margin-bottom: 12px; }
+  .addday button, .addset button {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    width: 100%; min-height: 46px; border-radius: var(--r-md);
+    background: var(--card); color: var(--muted);
+    font-size: 14px; font-weight: 600; letter-spacing: -.01em;
+    box-shadow: inset 0 0 0 1px var(--hair);
+  }
+  .addday button svg, .addset button svg {
+    width: 16px; height: 16px; stroke: currentColor; stroke-width: 2.2;
+    fill: none; stroke-linecap: round;
+  }
+  .addday input {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    opacity: 0; -webkit-appearance: none; appearance: none; background: none;
+  }
+  .addset { margin-top: 14px; }
+  .addset button { background: var(--card-2); box-shadow: none; }
 
   /* Freigabe je Trainingstag */
   .day .lockbar { display: flex; justify-content: flex-end; }
@@ -362,6 +395,12 @@
     animation: pulse 2.2s ease-in-out infinite;
   }
   @keyframes pulse { 50% { opacity: .28; } }
+  /* Nachtrag: gleiche Leiste, aber ohne pulsierenden Punkt – hier laeuft nichts */
+  .sessionbar.backfill > svg {
+    flex: none; width: 20px; height: 20px; stroke: var(--accent);
+    stroke-width: 2.2; fill: none; stroke-linecap: round;
+  }
+  .sessionbar.backfill .time { font-size: 15.5px; font-weight: 650; letter-spacing: -.015em; }
   .sessionbar .txt { min-width: 0; line-height: 1.25; }
   .sessionbar .txt b { display: block; font-size: 12.5px; color: var(--muted); font-weight: 600; }
   .sessionbar .time {
@@ -790,6 +829,7 @@
   var ICON_CHEV = '<svg class="chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>';
   var ICON_PEN = '<svg viewBox="0 0 24 24"><path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17v3z"/><path d="M14.5 6.5l3 3"/></svg>';
   var ICON_OK = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+  var ICON_PLUS = '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>';
 
   // ---------- Daten ----------
   var db = load();
@@ -1086,8 +1126,11 @@
     return h ? h + ":" + pad(m) + ":" + pad(s) : m + ":" + pad(s);
   }
 
+  // Unter drei Minuten ist die Angabe Rauschen – meist wurde die Einheit gleich
+  // nach dem Start beendet. Eine offensichtlich falsche Dauer neben 14 Saetzen
+  // ist schlechter als gar keine, deshalb leer statt "unter 1 Min".
   function fmtDauer(sec) {
-    if (sec < 60) return "unter 1 Min";
+    if (sec < 180) return "";
     var m = Math.round(sec / 60);
     if (m < 60) return m + " Min";
     var h = Math.floor(m / 60), r = m % 60;
@@ -1145,9 +1188,9 @@
     renderAll();
     if (!silent) {
       haptic();
-      toast(sets.length
-        ? fmtDauer(sec) + " · " + nSets(sets.length) + " · " + Math.round(volume(sets)).toLocaleString("de-DE") + " kg"
-        : "Training verworfen", sets.length ? "good" : "");
+      var bilanz = [nSets(sets.length), fmtVolume(volume(sets))];
+      if (fmtDauer(sec)) bilanz.unshift(fmtDauer(sec));
+      toast(sets.length ? bilanz.join(" · ") : "Training verworfen", sets.length ? "good" : "");
     }
   }
 
@@ -1181,6 +1224,17 @@
           '<button class="stop" type="button" id="skipRest">Fertig</button></div>';
       }
       el.innerHTML = html;
+      card.style.display = "";
+      bar.style.display = "";
+      return;
+    }
+
+    // Nachtrag: dieselbe Eingabe, nur mit festem Zieldatum statt laufender Uhr.
+    if (nachtragDatum) {
+      el.innerHTML = '<div class="sessionbar backfill">' + ICON_PLUS +
+        '<div class="txt"><b>Nachtrag</b><span class="time">' +
+        fmtDate(nachtragDatum) + '</span></div>' +
+        '<button class="stop" type="button" id="endBackfill">Fertig</button></div>';
       card.style.display = "";
       bar.style.display = "";
       return;
@@ -1357,8 +1411,8 @@
 
   // ---------- Satz speichern ----------
   $("saveSet").addEventListener("click", function () {
-    // Eine Korrektur braucht keine laufende Einheit – nur das Anlegen neuer Saetze.
-    if (!db.session && !editingId) { toast("Erst Training starten", "warn"); return; }
+    // Eine Korrektur braucht keine laufende Einheit, ein Nachtrag ebenfalls nicht.
+    if (!db.session && !nachtragDatum && !editingId) { toast("Erst Training starten", "warn"); return; }
     var ex = exSel.value;
     if (!ex || ex === "__new__") { toast("Bitte Übung wählen", "warn"); return; }
     var w = parseFloat(weightIn.value);
@@ -1383,12 +1437,23 @@
 
     unlockAudio();
     var prevBest = bestFor(ex);
+    // Starttag der Einheit, nicht der Kalendertag – sonst zerfaellt ein
+    // Training ueber Mitternacht in zwei Trainingstage
+    var tag = nachtragDatum || dayKey(new Date(db.session.start));
+    // Beim Nachtrag gibt es keine echte Uhrzeit. Der Zeitstempel wird ab Mittag
+    // des Zieltags fortgezaehlt, damit die Satzreihenfolge innerhalb des Tages
+    // stimmt und der Satz nicht faelschlich als der aktuellste ueberhaupt gilt.
+    var ts = Date.now();
+    if (nachtragDatum) {
+      var p = nachtragDatum.split("-");
+      var basis = new Date(+p[0], +p[1] - 1, +p[2], 12, 0, 0).getTime();
+      var vorhanden = db.sets.filter(function (s) { return s.date === tag; }).length;
+      ts = basis + vorhanden * 1000;
+    }
     db.sets.push({
       id: Date.now() + "-" + Math.random().toString(36).slice(2, 7),
-      // Starttag der Einheit, nicht der Kalendertag – sonst zerfaellt ein
-      // Training ueber Mitternacht in zwei Trainingstage
-      date: dayKey(new Date(db.session.start)),
-      ts: Date.now(),
+      date: tag,
+      ts: ts,
       exercise: ex,
       weight: w,
       reps: r
@@ -1396,7 +1461,7 @@
     save();
     renderAll();
     haptic();
-    startRest();
+    if (!nachtragDatum) startRest();
 
     var isPR = !prevBest || w > prevBest.weight || (w === prevBest.weight && r > prevBest.reps);
     toast(isPR ? "Neue Bestleistung" : "Satz gespeichert", isPR ? "good" : "");
@@ -1587,22 +1652,23 @@
     var el = $("todayList");
     // Beim Aendern eines vergangenen Satzes waere eine "Heute"-Liste daneben
     // nur verwirrend – der Tab zeigt dann ausschliesslich das Formular.
-    if (!db.session && editingId) { el.innerHTML = ""; return; }
-    // waehrend einer Einheit deren Starttag zeigen, sonst heute
-    var tag = db.session ? dayKey(new Date(db.session.start)) : todayKey();
+    if (!db.session && !nachtragDatum && editingId) { el.innerHTML = ""; return; }
+    // waehrend einer Einheit deren Starttag zeigen, beim Nachtrag das Zieldatum
+    var tag = nachtragDatum || (db.session ? dayKey(new Date(db.session.start)) : todayKey());
     var sets = db.sets.filter(function (s) { return s.date === tag; });
     if (!sets.length) {
       // ohne laufende Einheit spricht schon die Startkarte – kein zweiter Hinweis
-      el.innerHTML = db.session ? '<div class="empty">' +
+      el.innerHTML = (db.session || nachtragDatum) ? '<div class="empty">' +
         '<svg viewBox="0 0 24 24"><path d="M4 9v6M20 9v6M7 6v12M17 6v12M7 12h10"/></svg>' +
         '<p><b>Noch kein Satz</b>Trag deinen ersten Satz ein.</p></div>' : "";
       return;
     }
-    // Waehrend die Einheit laeuft bleibt das Loeschkreuz direkt erreichbar –
-    // hier korrigiert man gerade eine Fehleingabe, das ist der Normalfall.
-    el.innerHTML = '<div class="card flush' + (db.session ? " unlocked" : "") + '">' +
-      '<div class="section-head"><h2>Heute</h2><span class="meta">' +
-      nSets(sets.length) + ' · ' + Math.round(volume(sets)).toLocaleString("de-DE") + ' kg</span></div>' +
+    // Waehrend die Einheit laeuft oder nachgetragen wird bleibt das Loeschkreuz
+    // erreichbar – hier korrigiert man gerade eine Fehleingabe.
+    el.innerHTML = '<div class="card flush' + (db.session || nachtragDatum ? " unlocked" : "") + '">' +
+      '<div class="section-head"><h2>' + (nachtragDatum ? fmtDate(tag) : "Heute") +
+      '</h2><span class="meta">' +
+      nSets(sets.length) + ' · ' + fmtVolume(volume(sets)) + '</span></div>' +
       groupsHTML(sets) + '<div style="height:4px"></div></div>';
   }
 
@@ -1623,23 +1689,12 @@
     return "mixed";
   }
 
-  function dayTagsHTML(sets) {
-    var zeige = [];
-    var mv = moveTag(sets);
-    if (mv) {
-      zeige.push('<span class="mv ' + mv + '">' +
-        (mv === "mixed" ? "Gemischt" : moveName(mv)) + "</span>");
-    }
-
-    var m = volumeByGroup(sets);
-    var ks = Object.keys(m).filter(function (k) { return k; })
-      .sort(function (a, b) { return m[b] - m[a]; });
-    zeige = zeige.concat(ks.slice(0, 3).map(function (k) {
-      return "<span>" + groupName(k) + "</span>";
-    }));
-    if (ks.length > 3) zeige.push("<span>+" + (ks.length - 3) + "</span>");
-    if (!zeige.length) return "";
-    return '<div class="daytags">' + zeige.join("") + "</div>";
+  // Uebungen des Tages. Dieselbe Reihenfolge wie die Bloecke im aufgeklappten
+  // Zustand, sonst nennt die Vorschau eine andere Uebung zuerst als die Liste.
+  function dayExercises(sets, max) {
+    var namen = groupByExercise(sets).map(function (g) { return g.name; });
+    var zeige = namen.slice(0, max).map(esc).join(" · ");
+    return namen.length > max ? zeige + " +" + (namen.length - max) : zeige;
   }
 
   function renderHistory() {
@@ -1647,29 +1702,81 @@
     var days = {};
     db.sets.forEach(function (s) { (days[s.date] = days[s.date] || []).push(s); });
     var keys = Object.keys(days).sort().reverse();
+    var nachtragen = '<div class="addday"><button type="button">' +
+      ICON_PLUS + 'Training nachtragen</button>' +
+      '<input type="date" id="backfillDate" max="' + todayKey() +
+      '" aria-label="Datum für den Nachtrag"></div>';
     if (!keys.length) {
-      el.innerHTML = '<div class="empty">' +
+      el.innerHTML = nachtragen + '<div class="empty">' +
         '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M8 3v4M16 3v4M3 11h18"/></svg>' +
         '<p><b>Noch keine Trainings</b>Gespeicherte Tage erscheinen hier.</p></div>';
       return;
     }
-    el.innerHTML = keys.map(function (k, i) {
+    el.innerHTML = nachtragen + keys.map(function (k, i) {
       var sets = days[k];
       var w = db.workouts[k];
       var frei = editDay === k;
+      var mv = moveTag(sets);
+      // Reihenfolge wie besprochen: Bewegung, Datum, Uebungen, Kennzahlen –
+      // jede Zeile eine Aufgabe, damit die Karten untereinander fluchten.
+      var zahlen = [nSets(sets.length), fmtVolume(volume(sets))];
+      var dauer = w && w.sec ? fmtDauer(w.sec) : "";
+      if (dauer) zahlen.push(dauer);
       return '<details class="day' + (frei ? " unlocked" : "") + '"' +
         (i === 0 || frei ? " open" : "") + ' data-day="' + k + '">' +
-        '<summary>' + ICON_CHEV + '<span class="date">' + fmtDate(k) + '</span>' +
-        '<span class="meta">' + (w && w.sec ? fmtDauer(w.sec) + ' · ' : '') + nSets(sets.length) + ' · ' +
-        Math.round(volume(sets)).toLocaleString("de-DE") + ' kg</span>' +
-        dayTagsHTML(sets) + '</summary>' +
+        '<summary>' +
+        (mv ? '<div class="daytags"><span class="mv ' + mv + '">' +
+          (mv === "mixed" ? "Gemischt" : moveName(mv)) + '</span></div>' : '') +
+        '<div class="dline"><span class="date">' + fmtDate(k) + '</span>' + ICON_CHEV + '</div>' +
+        '<div class="exs">' + dayExercises(sets, 3) + '</div>' +
+        '<div class="nums">' + zahlen.join(" · ") + '</div>' +
+        '</summary>' +
         '<div class="body"><div class="lockbar">' +
         '<button type="button" class="lock" data-lock="' + k + '">' +
         '<span class="a">' + ICON_PEN + 'Bearbeiten</span>' +
         '<span class="b">' + ICON_OK + 'Fertig</span></button></div>' +
-        groupsHTML(sets) + '</div></details>';
+        groupsHTML(sets) +
+        '<div class="addset"><button type="button" data-add="' + k + '">' +
+        ICON_PLUS + 'Satz hinzufügen</button></div>' +
+        '</div></details>';
     }).join("");
   }
+
+  // ---------- Training nachtragen ----------
+  // Bewusst nur im Speicher, nicht in der Datenbank: laedt die App neu, endet
+  // der Modus. Schlimmstenfalls ist er weg – falsche Daten kann das nicht
+  // erzeugen, weil ohne Modus und ohne Einheit gar nichts gespeichert wird.
+  var nachtragDatum = null;
+
+  function starteNachtrag(k) {
+    if (db.session) { toast("Erst das laufende Training beenden", "warn"); return; }
+    if (k > todayKey()) { toast("Kein Datum in der Zukunft", "warn"); return; }
+    if (editingId) cancelEdit();
+    nachtragDatum = k;
+    renderSession(); renderToday(); renderHistory();
+    zeigeView("log");
+  }
+
+  function endeNachtrag() {
+    if (!nachtragDatum) return;
+    nachtragDatum = null;
+    renderSession(); renderToday(); renderHistory();
+    zeigeView("history");
+  }
+
+  document.addEventListener("change", function (e) {
+    if (!e.target.closest || !e.target.closest("#backfillDate")) return;
+    var v = e.target.value;
+    e.target.value = "";
+    if (v) starteNachtrag(v);
+  });
+
+  document.addEventListener("click", function (e) {
+    if (!e.target.closest) return;
+    if (e.target.closest("#endBackfill")) { endeNachtrag(); return; }
+    var b = e.target.closest("[data-add]");
+    if (b) starteNachtrag(b.dataset.add);
+  });
 
   // ---------- Training zum Bearbeiten freigeben ----------
   // Hoechstens ein Tag ist gleichzeitig offen. editDay ist die Wahrheit fuers
@@ -2039,7 +2146,8 @@
     var behalten = db.settings;
     db = leer();
     db.settings = behalten;
-    stopTicker(); stopRest(); editingId = null; editDay = null; undoSet = null;
+    stopTicker(); stopRest();
+    editingId = null; editDay = null; undoSet = null; nachtragDatum = null;
     save(); renderAll(); toast("Alle Daten gelöscht");
   });
 

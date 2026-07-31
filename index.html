@@ -352,70 +352,21 @@
   .sessionbar .stop:active { background: var(--raise); }
 
   /* ---------------- Übersicht ---------------- */
-  .streak {
-    display: flex; align-items: center; gap: 18px;
-    padding: 22px 20px; margin-bottom: 14px;
-    background: var(--card); border-radius: var(--r-lg);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .045);
-  }
-  .streak .flame {
-    flex: none; width: 56px; height: 56px; border-radius: 50%;
-    display: grid; place-items: center;
-    background: var(--accent-soft);
-  }
-  .streak .flame svg {
-    width: 27px; height: 27px; stroke: var(--accent); fill: none;
-    stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
-  }
-  .streak.zero .flame { background: var(--card-2); }
-  .streak.zero .flame svg { stroke: var(--dim); }
-  .streak .n {
-    font-size: 34px; font-weight: 750; letter-spacing: -.045em; line-height: 1.05;
-    font-variant-numeric: tabular-nums;
-  }
-  .streak .cap { color: var(--muted); font-size: 14px; font-weight: 500; margin-top: 2px; }
-
-  .week { padding: 18px 20px 20px; }
-  .week .top { display: flex; align-items: baseline; gap: 10px; margin-bottom: 15px; }
-  .week .top h2 { font-size: 16px; font-weight: 650; margin: 0; letter-spacing: -.02em; }
-  .week .top .cnt { margin-left: auto; font-size: 14px; font-weight: 600; color: var(--muted); }
-  .week .top .cnt b { color: var(--accent); font-variant-numeric: tabular-nums; }
-  .week .dots { display: grid; grid-template-columns: repeat(7, 1fr); gap: 7px; }
-  .week .d { text-align: center; }
-  .week .d .ring {
-    height: 38px; border-radius: 12px; background: var(--card-2);
-    display: grid; place-items: center; margin-bottom: 6px;
-    transition: background .2s;
-  }
-  .week .d .ring svg { width: 17px; height: 17px; stroke: var(--ink); stroke-width: 2.6; fill: none; stroke-linecap: round; stroke-linejoin: round; }
-  .week .d.done .ring { background: linear-gradient(150deg, var(--accent), var(--accent-2)); }
-  .week .d.today .ring { box-shadow: inset 0 0 0 1.5px var(--hair-strong); }
-  .week .d.done.today .ring { box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, .35); }
-  .week .d .lbl { font-size: 11.5px; color: var(--dim); font-weight: 600; }
-  .week .d.today .lbl { color: var(--muted); }
-
-  .heat-wrap { padding: 4px 20px 20px; }
-  .heat-months {
-    display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px;
-    margin: 0 0 5px 22px; height: 13px;
-  }
-  .heat-months span { font-size: 10.5px; color: var(--dim); font-weight: 600; white-space: nowrap; }
-  .heat-body { display: flex; gap: 6px; }
-  .heat-days {
-    display: grid; grid-template-rows: repeat(7, 1fr); gap: 4px;
-    width: 16px; flex: none;
-  }
-  .heat-days span {
-    font-size: 9.5px; color: var(--dim); font-weight: 600; line-height: 1;
-    display: flex; align-items: center;
-  }
+  /* Ohne Karte: das Raster sitzt direkt auf der Seite, die seitlichen
+     Abstaende kommen von main. */
+  .heat-wrap { margin: 2px 0 24px; }
   .heat-grid {
-    flex: 1; min-width: 0;
     display: grid; grid-template-rows: repeat(7, 1fr);
     grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px;
   }
   .heat-grid i {
     aspect-ratio: 1; border-radius: 4px; background: rgba(255, 255, 255, .045);
+  }
+  /* Anker im sonst gleichfoermigen Raster. Aussen liegend, damit die
+     Fuellfarbe der Kachel nicht angeknabbert wird – 1,5 px Linie plus
+     1,5 px Abstand passen genau in die 4 px Luecke. */
+  .heat-grid i.t {
+    outline: 1.5px solid rgba(255, 255, 255, .3); outline-offset: 1.5px;
   }
   .heat-grid i.f { background: rgba(255, 255, 255, .015); }
   .heat-grid i.l1 { background: rgba(204, 255, 77, .26); }
@@ -1696,9 +1647,9 @@
   }
 
   // ---------- Übersicht ----------
-  var HEAT_WEEKS = 16;
-  var DAY_LABELS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
-  var MONTHS = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
+  // 13 statt der gewuenschten ~90 Tage: das Raster ist spaltenweise nach
+  // Wochen gebaut, 90 Tage waeren 12,86 Spalten. 13 Wochen = 91 Tage.
+  var HEAT_WEEKS = 13;
 
   function dayKey(d) {
     return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
@@ -1724,63 +1675,14 @@
     return m;
   }
 
-  // Serie: Wochen in Folge mit erreichtem Ziel. Die laufende Woche bricht die
-  // Serie nicht, solange sie noch laufen kann – sie zaehlt erst ab Zielerfuellung.
-  function computeStreak(goal, daysPerWeek, curKey) {
-    var n = 0, k = curKey;
-    if ((daysPerWeek[k] || 0) < goal) k = dayKey(addDays(new Date(k.split("-")[0], +k.split("-")[1] - 1, +k.split("-")[2]), -7));
-    while ((daysPerWeek[k] || 0) >= goal) {
-      n++;
-      var p = k.split("-");
-      k = dayKey(addDays(new Date(+p[0], +p[1] - 1, +p[2]), -7));
-    }
-    return n;
-  }
-
   function renderOverview() {
     var el = $("overview");
     var vol = volumeByDay();
-    var trained = {};
-    Object.keys(vol).forEach(function (k) { trained[k] = 1; });
-
-    // Trainingstage je Woche
-    var perWeek = {};
-    Object.keys(trained).forEach(function (k) {
-      var p = k.split("-");
-      var ws = dayKey(weekStart(new Date(+p[0], +p[1] - 1, +p[2])));
-      perWeek[ws] = (perWeek[ws] || 0) + 1;
-    });
 
     var today = new Date();
     var curWeek = weekStart(today);
-    var curWeekKey = dayKey(curWeek);
-    var doneThisWeek = perWeek[curWeekKey] || 0;
-    // Eine Woche zaehlt, sobald mindestens ein Training drin war
-    var streak = computeStreak(1, perWeek, curWeekKey);
-
-    // --- Serie ---
-    var flame = '<svg viewBox="0 0 24 24"><path d="M12 3s5 4.2 5 9a5 5 0 0 1-10 0c0-1.6.7-3 1.5-4 .3 1.2 1 2 1.9 2.3C10.8 8 12 6 12 3z"/><path d="M7 14a5 5 0 0 0 10 0"/></svg>';
-    var streakTxt = streak === 0
-      ? "Noch keine Serie – leg diese Woche los"
-      : "Woche" + (streak === 1 ? "" : "n") + " in Folge trainiert";
-    var html = '<div class="streak' + (streak ? "" : " zero") + '">' +
-      '<div class="flame">' + flame + '</div><div>' +
-      '<div class="n">' + (streak || "—") + '</div>' +
-      '<div class="cap">' + streakTxt + '</div></div></div>';
-
-    // --- Diese Woche ---
-    html += '<div class="card"><div class="week">' +
-      '<div class="top"><h2>Diese Woche</h2><span class="cnt"><b>' + doneThisWeek +
-      '</b> ' + (doneThisWeek === 1 ? "Training" : "Trainings") + '</span></div><div class="dots">';
-    var check = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
-    for (var i = 0; i < 7; i++) {
-      var d = addDays(curWeek, i);
-      var k = dayKey(d);
-      var cls = (trained[k] ? " done" : "") + (k === dayKey(today) ? " today" : "");
-      html += '<div class="d' + cls + '"><div class="ring">' + (trained[k] ? check : "") + '</div>' +
-        '<div class="lbl">' + DAY_LABELS[i] + '</div></div>';
-    }
-    html += '</div></div>';
+    var todayKey = dayKey(today);
+    var html = "";
 
     // --- Kalenderraster ---
     var vals = Object.keys(vol).map(function (k) { return vol[k]; }).sort(function (a, b) { return a - b; });
@@ -1795,40 +1697,28 @@
     }
 
     var firstWeek = addDays(curWeek, -7 * (HEAT_WEEKS - 1));
-    var months = "", grid = "", lastMonth = -1, lastLabelCol = -9;
+    var grid = "";
     for (var w = 0; w < HEAT_WEEKS; w++) {
       var ws = addDays(firstWeek, w * 7);
-      var m = ws.getMonth();
-      if (m !== lastMonth && w - lastLabelCol >= 3) {
-        months += '<span>' + MONTHS[m] + '</span>';
-        lastLabelCol = w;
-      } else {
-        months += '<span></span>';
-      }
-      lastMonth = m;
       for (var dd = 0; dd < 7; dd++) {
         var cd = addDays(ws, dd);
         var ck = dayKey(cd);
-        var future = cd > today;
-        grid += '<i class="' + (future ? "f" : level(vol[ck]).trim()) + '"' +
+        var cls = cd > today ? "f" : level(vol[ck]).trim();
+        if (ck === todayKey) cls += " t";
+        grid += '<i class="' + cls + '"' +
           (vol[ck] ? ' title="' + ck + ': ' + Math.round(vol[ck]) + ' kg"' : "") + '></i>';
       }
     }
 
     html += '<div class="heat-wrap">' +
-      '<div class="heat-months">' + months + '</div>' +
-      '<div class="heat-body"><div class="heat-days">' +
-      DAY_LABELS.map(function (l, i) { return '<span>' + (i % 2 === 0 ? l : "") + '</span>'; }).join("") +
-      '</div><div class="heat-grid">' + grid + '</div></div>' +
-      '<div class="heat-legend"><span>letzte ' + HEAT_WEEKS + ' Wochen</span>' +
+      '<div class="heat-grid">' + grid + '</div>' +
+      '<div class="heat-legend">' +
       '<span class="sp">weniger</span>' +
       '<i style="background:rgba(255,255,255,.045)"></i>' +
       '<i style="background:rgba(204,255,77,.26)"></i>' +
       '<i style="background:rgba(204,255,77,.48)"></i>' +
       '<i style="background:rgba(204,255,77,.72)"></i>' +
       '<i style="background:var(--accent)"></i><span>mehr</span></div></div>';
-
-    html += '</div>';
 
     // --- letzte 30 Tage ---
     var since = addDays(today, -29);

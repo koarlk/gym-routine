@@ -366,8 +366,9 @@
   .startcard p { margin: 0 0 22px; color: var(--muted); font-size: 14.5px; }
   .startcard .btn { max-width: 320px; margin: 0 auto; }
 
+  /* zwei oder drei Kacheln – die Dauer fehlt bei nachgetragenen Trainings */
   .summary {
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+    display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 10px;
     margin: 0 0 22px;
   }
   .summary div { background: var(--card-2); border-radius: var(--r-sm); padding: 12px 6px; }
@@ -1266,11 +1267,15 @@
         '<button type="button" id="backupNow">Sichern</button></div>'
       : "";
 
-    if (w && todaySets.length) {
+    // Auch ein nachgetragenes Training zaehlt als erledigt, obwohl es keine
+    // gemessene Dauer hat – die Kachel entfaellt dann einfach.
+    if (todaySets.length) {
       el.innerHTML = hinweis + '<div class="startcard">' +
         '<span class="done">' + check + 'Heute trainiert</span>' +
         '<div class="summary">' +
-        '<div><div class="v">' + fmtDauerKurz(w.sec) + '</div><div class="k">Dauer</div></div>' +
+        (w && w.sec >= 180
+          ? '<div><div class="v">' + fmtDauerKurz(w.sec) + '</div><div class="k">Dauer</div></div>'
+          : '') +
         '<div><div class="v">' + todaySets.length + '</div><div class="k">' + (todaySets.length === 1 ? "Satz" : "Sätze") + '</div></div>' +
         '<div><div class="v">' + fmtVolume(volume(todaySets)) + '</div><div class="k">Volumen</div></div>' +
         '</div><button class="btn" id="startSession">Weiteres Training starten</button></div>';

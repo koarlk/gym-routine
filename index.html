@@ -378,19 +378,19 @@
   /* ---------------- Übersicht ---------------- */
   /* Ohne Karte: das Raster sitzt direkt auf der Seite, die seitlichen
      Abstaende kommen von main. */
-  .heat-wrap { margin: 2px 0 24px; }
+  .heat-wrap { margin: 2px 0 20px; }
   .heat-grid {
     display: grid; grid-template-rows: repeat(7, 1fr);
-    grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px;
+    grid-auto-flow: column; grid-auto-columns: 1fr; gap: 3px;
   }
   .heat-grid i {
-    aspect-ratio: 1; border-radius: 4px; background: rgba(255, 255, 255, .045);
+    aspect-ratio: 1; border-radius: 3px; background: rgba(255, 255, 255, .045);
   }
   /* Anker im sonst gleichfoermigen Raster. Aussen liegend, damit die
-     Fuellfarbe der Kachel nicht angeknabbert wird – 1,5 px Linie plus
-     1,5 px Abstand passen genau in die 4 px Luecke. */
+     Fuellfarbe der Kachel nicht angeknabbert wird – Linie plus Abstand
+     bleiben knapp unter der 3 px Luecke. */
   .heat-grid i.t {
-    outline: 1.5px solid rgba(255, 255, 255, .3); outline-offset: 1.5px;
+    outline: 1.5px solid rgba(255, 255, 255, .32); outline-offset: 1px;
   }
   .heat-grid i.f { background: rgba(255, 255, 255, .015); }
   .heat-grid i.l1 { background: rgba(204, 255, 77, .26); }
@@ -470,47 +470,39 @@
   /* ---------------- Muskelgruppen ---------------- */
   .dist { margin-bottom: 16px; }
   .dist .row {
-    display: flex; align-items: center; gap: 11px; padding: 9px 0;
+    display: flex; align-items: center; gap: 11px; padding: 6px 0;
   }
   .dist .nm { width: 84px; flex: none; font-size: 14px; font-weight: 600; letter-spacing: -.01em; }
   .dist .track {
     flex: 1; min-width: 0; height: 10px; border-radius: 999px;
     background: rgba(255, 255, 255, .05); overflow: hidden;
   }
-  .dist .fill {
-    height: 100%; border-radius: 999px;
-    background: linear-gradient(90deg, var(--accent-2), var(--accent));
-  }
+  /* Die Balkenlaenge ist der Anteil der Gruppe, die Segmente darin ihre
+     Aufteilung nach Bewegung. Muskelgruppen sind nicht sortenrein: Beine
+     enthalten Leg Press und Leg Curl, Schultern Pressen und Reverse Fly. */
+  .dist .fill { height: 100%; border-radius: 999px; display: flex; overflow: hidden; }
+  .dist .fill i { height: 100%; }
   .dist .pct {
     width: 44px; flex: none; text-align: right; font-size: 13px; font-weight: 650;
     font-variant-numeric: tabular-nums; color: var(--muted);
   }
   .dist .row.zero .nm, .dist .row.zero .pct { color: var(--dim); font-weight: 500; }
-  .dist .row.none .fill { background: var(--dim); }
   .dist .hint {
     display: block; margin-top: 10px; padding: 0;
     background: none; border-radius: 0; font-size: 12.5px; color: var(--dim);
   }
 
-  /* Bilanz Push / Pull */
-  .split { margin: 2px 0 16px; }
-  .split .track {
-    display: flex; height: 12px; border-radius: 999px; overflow: hidden;
-    background: rgba(255, 255, 255, .05);
-  }
-  .split .track i { height: 100%; }
-  /* gilt fuer Balkensegment und Legendenpunkt gleichermassen */
-  .split .push { background: var(--push); }
-  .split .pull { background: var(--pull); }
-  .split .neut { background: var(--dim); }
-  .split .open { background: rgba(255, 255, 255, .13); }
-  .split .leg {
-    display: flex; flex-wrap: wrap; gap: 4px 13px; margin-top: 10px;
-    font-size: 12.5px; color: var(--muted); font-weight: 500;
-  }
-  .split .leg span { display: inline-flex; align-items: center; gap: 6px; }
-  .split .leg i { width: 9px; height: 9px; border-radius: 3px; flex: none; }
-  .split .leg b { color: var(--text); font-weight: 650; font-variant-numeric: tabular-nums; }
+  /* Bewegungsfarben – gelten fuer Balkensegment und Legendenpunkt gleichermassen */
+  .push { background: var(--push); }
+  .pull { background: var(--pull); }
+  .neut { background: var(--dim); }
+  .open { background: rgba(255, 255, 255, .13); }
+
+  /* Farbschluessel im Kartenkopf: erklaert die Segmente, ohne eine eigene
+     Zeile zu kosten – der Kopf ist ohnehin da. */
+  .section-head .key { display: flex; gap: 13px; margin-left: auto; }
+  .section-head .key span { display: inline-flex; align-items: center; gap: 5px; }
+  .section-head .key i { width: 9px; height: 9px; border-radius: 3px; flex: none; }
 
   /* abgeleitete Gruppen am Trainingstag */
   .daytags {
@@ -1757,9 +1749,10 @@
   }
 
   // ---------- Übersicht ----------
-  // 13 statt der gewuenschten ~90 Tage: das Raster ist spaltenweise nach
-  // Wochen gebaut, 90 Tage waeren 12,86 Spalten. 13 Wochen = 91 Tage.
-  var HEAT_WEEKS = 13;
+  // Volle Breite und quadratische Kacheln legen die Hoehe fest: Breite durch
+  // Spalten mal sieben Zeilen. Flacher wird das Raster deshalb nur ueber mehr
+  // Spalten – 26 Wochen ergeben 12px-Kacheln und rund 100 statt 207 px Hoehe.
+  var HEAT_WEEKS = 26;
 
   function dayKey(d) {
     return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
@@ -1844,53 +1837,48 @@
       tile(fmtVolume(volume(recent)), "Volumen") +
       '</div>';
 
-    // --- Verteilung nach Muskelgruppen ---
+    // --- Verteilung nach Muskelgruppen, aufgeschluesselt nach Bewegung ---
     var proGruppe = volumeByGroup(recent);
     var gesamt = volume(recent);
     if (gesamt > 0) {
-      var zeilen = GROUPS.map(function (g) {
-        return { n: g.n, v: proGruppe[g.k] || 0, none: false };
+      // Volumen je Gruppe, getrennt nach Push/Pull/Neutral/ohne Angabe.
+      // Ein eigener Durchlauf statt einer Ableitung: eine Gruppe ist nicht
+      // sortenrein, Beine enthalten Druecken und Ziehen.
+      var mix = {};
+      recent.forEach(function (s) {
+        var g = db.groups[s.exercise] || "";
+        var b = db.moves[s.exercise];
+        b = b === "push" ? "push" : b === "pull" ? "pull" : b === "neutral" ? "neut" : "open";
+        var e = mix[g] = mix[g] || { push: 0, pull: 0, neut: 0, open: 0 };
+        e[b] += s.weight * s.reps;
       });
-      if (proGruppe[""]) zeilen.push({ n: "Nicht zugeordnet", v: proGruppe[""], none: true });
+
+      var zeilen = GROUPS.map(function (g) {
+        return { n: g.n, k: g.k, v: proGruppe[g.k] || 0 };
+      });
+      if (proGruppe[""]) zeilen.push({ n: "Nicht zugeordnet", k: "", v: proGruppe[""] });
       zeilen.sort(function (a, b) { return b.v - a.v; });
       var max = zeilen[0].v || 1;
 
-      // Bilanz Push / Pull – unzugeordnetes bleibt als eigenes Segment
-      // sichtbar, statt sich unter "Neutral" zu verstecken
-      var bew = {};
-      recent.forEach(function (s) {
-        var k = db.moves[s.exercise] || "";
-        bew[k] = (bew[k] || 0) + s.weight * s.reps;
-      });
-      var segs = [
-        { c: "push", n: "Push", v: bew.push || 0 },
-        { c: "pull", n: "Pull", v: bew.pull || 0 },
-        { c: "neut", n: "Neutral", v: bew.neutral || 0 },
-        { c: "open", n: "Ohne Angabe", v: bew[""] || 0 }
-      ].filter(function (x) { return x.v > 0; });
-
       html += '<div class="card"><div class="section-head"><h2>Verteilung</h2>' +
-        '<span class="meta">Anteil am Volumen</span></div>';
-
-      if (segs.length) {
-        html += '<div class="split"><div class="track">' +
-          segs.map(function (x) {
-            return '<i class="' + x.c + '" style="width:' + (x.v / gesamt * 100) + '%"></i>';
-          }).join("") + '</div><div class="leg">' +
-          segs.map(function (x) {
-            // Farbe kommt aus dem CSS, gleiche Klasse wie das Balkensegment
-            return '<span><i class="' + x.c + '"></i>' +
-              x.n + ' <b>' + Math.round(x.v / gesamt * 100) + ' %</b></span>';
-          }).join("") + '</div></div>';
-      }
+        '<span class="key"><span><i class="push"></i>' + moveName("push") + '</span>' +
+        '<span><i class="pull"></i>' + moveName("pull") + '</span></span></div>';
 
       html += '<div class="dist">' +
         zeilen.map(function (z) {
           var pct = Math.round(z.v / gesamt * 100);
-          return '<div class="row' + (z.v ? "" : " zero") + (z.none ? " none" : "") + '">' +
+          var m = mix[z.k] || { push: 0, pull: 0, neut: 0, open: 0 };
+          // Segmentbreiten in Prozent der Gruppe, nicht des Gesamtvolumens
+          var seg = z.v
+            ? ["push", "pull", "neut", "open"].filter(function (c) { return m[c] > 0; })
+                .map(function (c) {
+                  return '<i class="' + c + '" style="width:' + (m[c] / z.v * 100) + '%"></i>';
+                }).join("")
+            : "";
+          return '<div class="row' + (z.v ? "" : " zero") + '">' +
             '<div class="nm">' + z.n + '</div>' +
             '<div class="track"><div class="fill" style="width:' +
-            (z.v ? Math.max(3, Math.round(z.v / max * 100)) : 0) + '%"></div></div>' +
+            (z.v ? Math.max(3, Math.round(z.v / max * 100)) : 0) + '%">' + seg + '</div></div>' +
             '<div class="pct">' + (z.v ? pct + " %" : "–") + '</div></div>';
         }).join("");
       var offen = ohneGruppe().length;

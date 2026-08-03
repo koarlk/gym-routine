@@ -860,25 +860,44 @@
   var ICON_PLUS = '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>';
 
   // ---------- Daten ----------
+  // "neu"      – nichts gespeichert, erster Start
+  // "ok"       – Bestand gelesen
+  // "unlesbar" – es liegt etwas da, war aber nicht verwertbar
+  // Muss vor load() stehen: als var-Deklaration darunter wuerde die Zuweisung
+  // erst nach dem Lesen laufen und das Ergebnis wieder auf "neu" setzen.
+  var startZustand = "neu";
   var db = load();
 
   function load() {
+    var raw = null;
     try {
-      var raw = localStorage.getItem(KEY);
-      if (raw) {
-        var d = JSON.parse(raw);
-        if (d && Array.isArray(d.sets)) {
-          d.exercises = Array.isArray(d.exercises) ? d.exercises : [];
-          d.settings = normSettings(d.settings);
-          d.workouts = (d.workouts && typeof d.workouts === "object") ? d.workouts : {};
-          d.session = (d.session && d.session.start) ? d.session : null;
-          d.backup = (d.backup && typeof d.backup === "object") ? d.backup : { at: 0, due: 0 };
-          d.groups = (d.groups && typeof d.groups === "object") ? d.groups : {};
-          d.moves = (d.moves && typeof d.moves === "object") ? d.moves : {};
-          return migrate(d);
-        }
+      raw = localStorage.getItem(KEY);
+    } catch (e) {
+      // Speicher gar nicht erreichbar (z. B. privates Surfen)
+      startZustand = "unlesbar";
+      return leer();
+    }
+    if (raw === null) { startZustand = "neu"; return leer(); }
+    try {
+      var d = JSON.parse(raw);
+      if (d && Array.isArray(d.sets)) {
+        d.exercises = Array.isArray(d.exercises) ? d.exercises : [];
+        d.settings = normSettings(d.settings);
+        d.workouts = (d.workouts && typeof d.workouts === "object") ? d.workouts : {};
+        d.session = (d.session && d.session.start) ? d.session : null;
+        d.backup = (d.backup && typeof d.backup === "object") ? d.backup : { at: 0, due: 0 };
+        d.groups = (d.groups && typeof d.groups === "object") ? d.groups : {};
+        d.moves = (d.moves && typeof d.moves === "object") ? d.moves : {};
+        startZustand = "ok";
+        return migrate(d);
       }
-    } catch (e) { /* korrupte Daten: frisch starten */ }
+    } catch (e) { /* faellt unten durch */ }
+
+    // Es lag etwas da, nur nicht verwertbar. Das Rohe zur Seite legen, damit
+    // sich der Bestand notfalls von Hand retten laesst, und den leeren Stand
+    // auf keinen Fall darueberschreiben.
+    startZustand = "unlesbar";
+    try { localStorage.setItem(KEY + ".defekt", raw); } catch (e) { /* dann eben nicht */ }
     return leer();
   }
 
@@ -2175,6 +2194,14 @@
 
     var html = '<div class="store">';
 
+    // Wichtigste Zeile zuerst: hier ist tatsaechlich etwas schiefgegangen
+    if (startZustand === "unlesbar") {
+      html += storeRow(false, "Gespeicherte Daten waren nicht lesbar",
+        "Beim Start lag etwas im Speicher, das sich nicht öffnen ließ. Es wurde " +
+        "nichts überschrieben – der alte Stand liegt unter <em>gymTracker.v1.defekt</em>. " +
+        "Hol die Daten über <em>Backup importieren</em> zurück.");
+    }
+
     html += app
       ? storeRow(true, "Als App gestartet",
           "Vom Home-Bildschirm geöffnet. iOS löscht die Daten dieser App nicht nach sieben Tagen Pause.")
@@ -2299,7 +2326,12 @@
 
   // ---------- Start ----------
   resumeSession();
-  save();          // Migration und normalisierte Einstellungen festschreiben
+  // Migration und normalisierte Einstellungen festschreiben – aber nur, wenn
+  // klar ist, dass darunter nichts Wertvolles liegt. Sonst wuerde ein einziger
+  // gescheiterter Lesevorgang den Bestand sofort durch einen leeren Stand
+  // ersetzen und aus einem voruebergehenden Problem einen endgueltigen Verlust
+  // machen.
+  if (startZustand !== "unlesbar") save();
   renderAll();
   speicherPruefen();   // fordert dauerhaften Speicher an, sobald die App laeuft
   var lu = lastUsedExercise();

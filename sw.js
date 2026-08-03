@@ -1,5 +1,5 @@
 /* Service Worker: macht die App offline nutzbar (wichtig im Gym ohne Empfang). */
-var CACHE = "gym-tracker-v17";
+var CACHE = "gym-tracker-v18";
 var ASSETS = ["./", "./index.html", "./manifest.json", "./icon-180.png", "./icon-512.png"];
 
 self.addEventListener("install", function (e) {

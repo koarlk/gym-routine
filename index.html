@@ -560,6 +560,19 @@
   .daytags .mv.pull { background: rgba(0, 122, 214, .22); color: var(--pull-ink); }
   .daytags .mv.mixed { background: var(--raise); color: var(--muted); }
 
+  /* Versionszeile */
+  .verline {
+    display: flex; align-items: center; gap: 12px;
+    margin-top: 18px; padding: 0 2px;
+    font-size: 12.5px; color: var(--dim); font-weight: 500;
+  }
+  .verline b { color: var(--muted); font-weight: 650; }
+  .verline button {
+    margin-left: auto; padding: 10px 14px; border-radius: 999px;
+    background: var(--card-2); color: var(--muted);
+    font-size: 12.5px; font-weight: 600;
+  }
+
   /* Speicherzustand */
   .store { margin-bottom: 14px; }
   .store .r {
@@ -769,6 +782,10 @@
     <button class="btn ghost" id="importBtn" style="margin-bottom:10px">Backup importieren</button>
     <input type="file" id="importFile" accept="application/json,.json" hidden>
     <button class="btn ghost danger" id="wipeBtn">Alle Daten löschen</button>
+    <div class="verline">
+      <span>Gym Tracker <b id="appVersion"></b></span>
+      <button type="button" id="checkUpdate">Nach Updates suchen</button>
+    </div>
   </section>
 </main>
 
@@ -2147,6 +2164,32 @@
 
   function backupFaellig() { return db.backup.due >= BACKUP_FAELLIG; }
 
+  // ---------- Version und Aktualisierung ----------
+  // Ohne sichtbare Version bleibt nur Raten, ob ein Update schon angekommen
+  // ist – und im Zweifel das Loeschen und Neuanlegen des Symbols vom
+  // Home-Bildschirm. Genau das loescht unter iOS den Speicher der App mit.
+  // Ein Neuladen genuegt: der Service Worker holt die Seite netz-zuerst.
+  var APP_VERSION = "v20";
+
+  function nachUpdateSuchen() {
+    toast("Suche …");
+    fetch("index.html?cb=" + Date.now(), { cache: "no-store" })
+      .then(function (r) { return r.text(); })
+      .then(function (t) {
+        var m = t.match(/APP_VERSION\s*=\s*"([^"]+)"/);
+        if (!m) { toast("Version nicht erkennbar", "warn"); return; }
+        if (m[1] === APP_VERSION) { toast("Bereits aktuell · " + APP_VERSION, "good"); return; }
+        toast("Version " + m[1] + " wird geladen …", "good");
+        var neuLaden = function () { setTimeout(function () { location.reload(); }, 800); };
+        if (navigator.serviceWorker && navigator.serviceWorker.getRegistration) {
+          navigator.serviceWorker.getRegistration()
+            .then(function (r) { if (r) r.update(); neuLaden(); })
+            .catch(neuLaden);
+        } else neuLaden();
+      })
+      .catch(function () { toast("Keine Verbindung", "warn"); });
+  }
+
   // ---------- Speicherzustand ----------
   // iOS raeumt den Speicher einer Website auf, die sieben Tage nicht in Safari
   // benutzt wurde – localStorage inklusive. Zwei Dinge schuetzen davor: die App
@@ -2256,6 +2299,9 @@
     setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
     fertig();
   }
+
+  $("appVersion").textContent = APP_VERSION;
+  $("checkUpdate").addEventListener("click", nachUpdateSuchen);
 
   $("exportBtn").addEventListener("click", exportDaten);
   document.addEventListener("click", function (e) {

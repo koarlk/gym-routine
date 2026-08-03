@@ -560,6 +560,26 @@
   .daytags .mv.pull { background: rgba(0, 122, 214, .22); color: var(--pull-ink); }
   .daytags .mv.mixed { background: var(--raise); color: var(--muted); }
 
+  /* Speicherzustand */
+  .store { margin-bottom: 14px; }
+  .store .r {
+    display: flex; gap: 11px; align-items: flex-start;
+    padding: 13px 15px; margin-bottom: 8px;
+    background: var(--card); border-radius: var(--r-md);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .045);
+  }
+  .store .r svg {
+    flex: none; width: 18px; height: 18px; margin-top: 1px;
+    stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round;
+  }
+  .store .ok svg { stroke: var(--accent); }
+  .store .warn svg { stroke: var(--push); }
+  .store .warn { box-shadow: inset 0 0 0 1px rgba(255, 185, 0, .3); }
+  .store b { display: block; font-size: 14px; font-weight: 650; letter-spacing: -.01em; }
+  .store span { display: block; font-size: 12.5px; color: var(--muted); line-height: 1.4; margin-top: 2px; }
+  /* Namen von Knoepfen und Menuepunkten hervorheben, aber nicht kursiv */
+  .store em { font-style: normal; font-weight: 650; color: var(--text); }
+
   /* Hinweis auf unzugeordnete Maschinen */
   .untagged {
     display: flex; align-items: center; gap: 12px; width: 100%;
@@ -741,6 +761,9 @@
 
   <!-- ============ STATISTIK ============ -->
   <section id="view-stats" class="view">
+    <!-- Speicherzustand oben: Datenverlust ist wichtiger als die Bestleistungen,
+         hinter der langen Uebungsliste wuerde die Warnung niemand finden -->
+    <div id="storageCard"></div>
     <div id="statsCard"></div>
     <button class="btn ghost" id="exportBtn" style="margin-bottom:10px">Daten exportieren</button>
     <button class="btn ghost" id="importBtn" style="margin-bottom:10px">Backup importieren</button>
@@ -2024,6 +2047,7 @@
     renderOverview();
     renderHistory();
     renderStats();
+    renderStorage();
     var days = {};
     db.sets.forEach(function (s) { days[s.date] = 1; });
     var n = Object.keys(days).length;
@@ -2103,6 +2127,81 @@
   }
 
   function backupFaellig() { return db.backup.due >= BACKUP_FAELLIG; }
+
+  // ---------- Speicherzustand ----------
+  // iOS raeumt den Speicher einer Website auf, die sieben Tage nicht in Safari
+  // benutzt wurde – localStorage inklusive. Zwei Dinge schuetzen davor: die App
+  // vom Home-Bildschirm starten (davon ausgenommen) und dauerhaften Speicher
+  // anfordern. Ausserdem hat die Home-Bildschirm-App unter iOS einen eigenen
+  // Speicherbereich: was in Safari eingetragen wurde, taucht dort nicht auf.
+  var speicherDauerhaft = null;
+
+  function alsAppGestartet() {
+    return navigator.standalone === true ||
+      (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+  }
+
+  function speicherPruefen() {
+    if (!navigator.storage || !navigator.storage.persisted) { renderStorage(); return; }
+    navigator.storage.persisted().then(function (p) {
+      if (p || !navigator.storage.persist) { speicherDauerhaft = p; renderStorage(); return; }
+      return navigator.storage.persist().then(function (ok) {
+        speicherDauerhaft = ok;
+        renderStorage();
+      });
+    }).catch(function () { speicherDauerhaft = false; renderStorage(); });
+  }
+
+  function seitSicherung() {
+    if (!db.backup.at) return null;
+    return Math.floor((Date.now() - db.backup.at) / 86400000);
+  }
+
+  var ICON_WARN = '<svg viewBox="0 0 24 24"><path d="M12 3.5L1.8 20.5h20.4L12 3.5z"/>' +
+    '<path d="M12 10v4M12 17.2v.3"/></svg>';
+  var ICON_CHECK = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/>' +
+    '<path d="M8 12.3l2.6 2.6L16 9.5"/></svg>';
+
+  function storeRow(ok, titel, text) {
+    return '<div class="r ' + (ok ? "ok" : "warn") + '">' + (ok ? ICON_CHECK : ICON_WARN) +
+      '<div><b>' + titel + '</b><span>' + text + '</span></div></div>';
+  }
+
+  function renderStorage() {
+    var el = document.getElementById("storageCard");
+    if (!el) return;
+    var app = alsAppGestartet();
+    var tage = seitSicherung();
+
+    var html = '<div class="store">';
+
+    html += app
+      ? storeRow(true, "Als App gestartet",
+          "Vom Home-Bildschirm geöffnet. iOS löscht die Daten dieser App nicht nach sieben Tagen Pause.")
+      : storeRow(false, "Im Browser geöffnet",
+          "iOS löscht den Speicher einer Website, die sieben Tage nicht benutzt wurde. " +
+          "Über <em>Teilen → Zum Home-Bildschirm</em> hinzufügen und nur noch von dort öffnen. " +
+          "Achtung: die App vom Home-Bildschirm hat einen eigenen Speicher – Daten aus dem Browser " +
+          "sind dort erst nach einem Import sichtbar.");
+
+    if (speicherDauerhaft === true) {
+      html += storeRow(true, "Speicher dauerhaft",
+        "Das System hat zugesagt, diese Daten nicht von sich aus zu löschen.");
+    } else if (speicherDauerhaft === false) {
+      html += storeRow(false, "Speicher nicht zugesichert",
+        "Das System darf die Daten bei Platzmangel entfernen. Eine Sicherung ist der einzige Schutz.");
+    }
+
+    html += tage === null
+      ? storeRow(false, "Noch nie gesichert",
+          "Die Daten liegen ausschließlich auf diesem Gerät. Sichere sie über <em>Daten exportieren</em> " +
+          "in die Dateien-App oder iCloud Drive – von dort holt <em>Backup importieren</em> sie zurück.")
+      : storeRow(tage <= 14, "Letzte Sicherung",
+          tage === 0 ? "Heute." : "vor " + tage + (tage === 1 ? " Tag." : " Tagen.") +
+            (tage > 14 ? " Zeit für eine neue." : ""));
+
+    el.innerHTML = html + '</div>';
+  }
 
   function exportDaten() {
     var kopie = {
@@ -2202,6 +2301,7 @@
   resumeSession();
   save();          // Migration und normalisierte Einstellungen festschreiben
   renderAll();
+  speicherPruefen();   // fordert dauerhaften Speicher an, sobald die App laeuft
   var lu = lastUsedExercise();
   if (lu) { renderExercises(lu); prefillFromLast(); }
 })();

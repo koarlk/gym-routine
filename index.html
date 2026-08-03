@@ -113,6 +113,10 @@
     padding: 16px 2px 12px;
   }
   .section-head h2 { font-size: 17px; font-weight: 650; margin: 0; letter-spacing: -.02em; }
+  /* Bezugsgroesse inline, damit sie keine eigene Zeile kostet */
+  .section-head h2 small {
+    font-size: 12.5px; font-weight: 500; color: var(--dim); letter-spacing: 0;
+  }
   .section-head .meta { margin-left: auto; color: var(--dim); font-size: 13px; font-weight: 500; }
 
   /* ---------------- Übungsauswahl ---------------- */
@@ -999,13 +1003,20 @@
 
   // Volumen je Muskelgruppe; unzugeordnetes bleibt sichtbar, damit sich die
   // Anteile nicht heimlich auf 100 % schoenrechnen.
-  function volumeByGroup(sets) {
+  // Wiederholungen je Muskelgruppe. Bewusst nicht das Volumen: eine Uebung mit
+  // 0 kg – etwa die Hyperextension – traegt dort gar nichts bei und faellt aus
+  // der Bilanz, obwohl sie trainiert wurde.
+  function repsByGroup(sets) {
     var m = {};
     sets.forEach(function (s) {
       var k = db.groups[s.exercise] || "";
-      m[k] = (m[k] || 0) + s.weight * s.reps;
+      m[k] = (m[k] || 0) + s.reps;
     });
     return m;
+  }
+
+  function reps(sets) {
+    return sets.reduce(function (a, s) { return a + s.reps; }, 0);
   }
 
   // Unvollstaendig ist, wem mindestens eine der beiden Angaben fehlt
@@ -1950,10 +1961,10 @@
       '</div>';
 
     // --- Verteilung nach Muskelgruppen, aufgeschluesselt nach Bewegung ---
-    var proGruppe = volumeByGroup(recent);
-    var gesamt = volume(recent);
+    var proGruppe = repsByGroup(recent);
+    var gesamt = reps(recent);
     if (gesamt > 0) {
-      // Volumen je Gruppe, getrennt nach Push/Pull/Neutral/ohne Angabe.
+      // Wiederholungen je Gruppe, getrennt nach Push/Pull/Neutral/ohne Angabe.
       // Ein eigener Durchlauf statt einer Ableitung: eine Gruppe ist nicht
       // sortenrein, Beine enthalten Druecken und Ziehen.
       var mix = {};
@@ -1962,7 +1973,7 @@
         var b = db.moves[s.exercise];
         b = b === "push" ? "push" : b === "pull" ? "pull" : b === "neutral" ? "neut" : "open";
         var e = mix[g] = mix[g] || { push: 0, pull: 0, neut: 0, open: 0 };
-        e[b] += s.weight * s.reps;
+        e[b] += s.reps;
       });
 
       var zeilen = GROUPS.map(function (g) {
@@ -1972,7 +1983,8 @@
       zeilen.sort(function (a, b) { return b.v - a.v; });
       var max = zeilen[0].v || 1;
 
-      html += '<div class="card"><div class="section-head"><h2>Verteilung</h2>' +
+      html += '<div class="card"><div class="section-head">' +
+        '<h2>Verteilung <small>nach Wdh.</small></h2>' +
         '<span class="key"><span><i class="push"></i>' + moveName("push") + '</span>' +
         '<span><i class="pull"></i>' + moveName("pull") + '</span></span></div>';
 
@@ -1980,7 +1992,7 @@
         zeilen.map(function (z) {
           var pct = Math.round(z.v / gesamt * 100);
           var m = mix[z.k] || { push: 0, pull: 0, neut: 0, open: 0 };
-          // Segmentbreiten in Prozent der Gruppe, nicht des Gesamtvolumens
+          // Segmentbreiten in Prozent der Gruppe, nicht des Gesamtwerts
           var seg = z.v
             ? ["push", "pull", "neut", "open"].filter(function (c) { return m[c] > 0; })
                 .map(function (c) {

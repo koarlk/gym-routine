@@ -491,6 +491,9 @@
     display: grid; place-items: center; margin-bottom: 2px; transition: background .15s;
   }
   .picker .manage:active { background: var(--raise); }
+  /* Solange es keine Uebung gibt, ist das Anlegen die einzige sinnvolle Aktion */
+  .picker select:disabled { color: var(--dim); opacity: 1; }
+  #newExercise svg { stroke: var(--accent); }
   .picker .manage svg {
     width: 19px; height: 19px; stroke: var(--muted); stroke-width: 2.2;
     fill: none; stroke-linecap: round;
@@ -731,6 +734,12 @@
           <div class="cap">Maschine / Übung</div>
           <select id="exercise" aria-label="Maschine oder Übung"></select>
         </div>
+        <!-- Eigener Knopf statt nur des Listeneintrags: die Liste kann nichts
+             ausloesen, wenn "Neue Übung" schon ausgewaehlt ist – dann waehlt
+             man denselben Wert erneut und der Browser feuert kein change. -->
+        <button class="manage" id="newExercise" type="button" aria-label="Neue Übung anlegen">
+          <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
         <button class="manage" id="manageExercise" type="button" aria-label="Übung umbenennen oder löschen">
           <svg viewBox="0 0 24 24"><path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17v3z"/><path d="M14.5 6.5l3 3"/></svg>
         </button>
@@ -1179,9 +1188,24 @@
   }
 
   function renderExercises(selected) {
+    var liste = allExercises();
     var cur = selected || exSel.value;
     exSel.innerHTML = "";
-    allExercises().forEach(function (n) {
+
+    // Ohne Uebungen keinen "Neue Übung"-Eintrag: er waere der einzige und damit
+    // bereits ausgewaehlt – ein erneutes Auswaehlen loest kein change aus und
+    // die Liste bliebe eine Sackgasse. Dafuer gibt es den Plus-Knopf daneben.
+    if (!liste.length) {
+      var p = document.createElement("option");
+      p.value = ""; p.textContent = "Noch keine Übung";
+      exSel.appendChild(p);
+      exSel.disabled = true;
+      updateHint();
+      return;
+    }
+
+    exSel.disabled = false;
+    liste.forEach(function (n) {
       var o = document.createElement("option");
       o.value = n; o.textContent = n;
       exSel.appendChild(o);
@@ -1194,18 +1218,24 @@
     updateHint();
   }
 
+  function neueUebung() {
+    frageText("Neue Übung", "Name der Maschine oder Übung.", "", function (name) {
+      if (!name) { renderExercises(lastUsedExercise()); return; }
+      var exists = allExercises().filter(function (n) { return n.toLowerCase() === name.toLowerCase(); })[0];
+      if (exists) { renderExercises(exists); return; }
+      db.exercises.push(name);
+      save();
+      renderExercises(name);
+      // direkt einordnen, damit kein unzugeordneter Bestand entsteht
+      openClassify(name, function () { renderExercises(name); });
+    });
+  }
+
+  $("newExercise").addEventListener("click", neueUebung);
+
   exSel.addEventListener("change", function () {
     if (exSel.value === "__new__") {
-      frageText("Neue Übung", "Name der Maschine oder Übung.", "", function (name) {
-        if (!name) { renderExercises(lastUsedExercise()); return; }
-        var exists = allExercises().filter(function (n) { return n.toLowerCase() === name.toLowerCase(); })[0];
-        if (exists) { renderExercises(exists); return; }
-        db.exercises.push(name);
-        save();
-        renderExercises(name);
-        // direkt einordnen, damit kein unzugeordneter Bestand entsteht
-        openClassify(name, function () { renderExercises(name); });
-      });
+      neueUebung();
     } else {
       updateHint();
       prefillFromLast();
@@ -1235,7 +1265,7 @@
   function updateHint() {
     var ex = exSel.value;
     if (!ex || ex === "__new__") {
-      $("lastHint").textContent = "Lege deine erste Maschine an";
+      $("lastHint").textContent = "Tipp auf ＋, um deine erste Maschine anzulegen";
       return;
     }
     var last = lastSetFor(ex);
@@ -1556,7 +1586,10 @@
     // Eine Korrektur braucht keine laufende Einheit, ein Nachtrag ebenfalls nicht.
     if (!db.session && !nachtragDatum && !editingId) { toast("Erst Training starten", "warn"); return; }
     var ex = exSel.value;
-    if (!ex || ex === "__new__") { toast("Bitte Übung wählen", "warn"); return; }
+    if (!ex || ex === "__new__") {
+      toast(allExercises().length ? "Bitte Übung wählen" : "Erst eine Übung anlegen", "warn");
+      return;
+    }
     var w = parseFloat(weightIn.value);
     var r = parseInt(repsIn.value, 10);
     if (isNaN(w) || w < 0) { toast("Gewicht ungültig", "warn"); return; }
@@ -2242,7 +2275,7 @@
   // ist – und im Zweifel das Loeschen und Neuanlegen des Symbols vom
   // Home-Bildschirm. Genau das loescht unter iOS den Speicher der App mit.
   // Ein Neuladen genuegt: der Service Worker holt die Seite netz-zuerst.
-  var APP_VERSION = "v21";
+  var APP_VERSION = "v22";
 
   function nachUpdateSuchen() {
     toast("Suche …");

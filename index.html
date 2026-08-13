@@ -632,6 +632,15 @@
   .sheet .opts.three { grid-template-columns: repeat(3, 1fr); }
   .sheet .opts.three button { padding: 15px 4px; font-size: 14.5px; }
   .sheet .btn { margin-top: 2px; }
+  .sheet .btn.danger { background: var(--danger); color: #fff; }
+  /* 16px verhindert, dass iOS beim Fokus in das Feld hineinzoomt */
+  .sheet .sheetin {
+    display: block; width: 100%; margin: 0 0 16px; padding: 15px 14px;
+    border-radius: var(--r-sm); background: var(--card-2); color: var(--text);
+    font-size: 16px; font-weight: 600; letter-spacing: -.01em;
+    box-shadow: inset 0 0 0 1px var(--hair);
+  }
+  .sheet .sheetin:focus { outline: none; box-shadow: inset 0 0 0 1.5px var(--accent); }
   .sheet .opts button {
     padding: 16px 10px; border-radius: var(--r-sm); background: var(--card-2);
     font-size: 15.5px; font-weight: 600; letter-spacing: -.01em;
@@ -982,6 +991,60 @@
 
   var classifyName = null, classifyDone = null;
 
+  // In-App-Browser (LinkedIn, Instagram, Facebook) unterdruecken window.prompt
+  // ersatzlos: der Aufruf liefert sofort null, ohne dass etwas erscheint. Aus
+  // Sicht der Benutzerin passiert schlicht nichts. Deshalb Text- und Ja/Nein-
+  // Abfragen im eigenen Blatt statt ueber die Browserdialoge.
+  var textCb = null, confirmCb = null;
+
+  function frageText(titel, sub, vorgabe, cb) {
+    schliesseOffeneFrage();
+    textCb = cb;
+    classifyName = null; classifyDone = null; sheetCb = null;
+    $("sheetTitle").textContent = titel;
+    $("sheetSub").textContent = sub || "";
+    $("sheetBody").innerHTML =
+      '<input class="sheetin" id="sheetInput" type="text" enterkeyhint="done" ' +
+      'autocomplete="off" autocapitalize="words" spellcheck="false" value="' +
+      esc(vorgabe || "") + '">' +
+      '<button class="btn" type="button" id="sheetTextOk">Übernehmen</button>';
+    $("sheet").hidden = false;
+    var inp = $("sheetInput");
+    inp.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); uebernimmText(); }
+    });
+    setTimeout(function () { inp.focus(); inp.select(); }, 60);
+  }
+
+  function uebernimmText() {
+    var inp = document.getElementById("sheetInput");
+    if (!inp) return;
+    var wert = (inp.value || "").trim();
+    var cb = textCb; textCb = null;
+    $("sheet").hidden = true;
+    if (cb) cb(wert);
+  }
+
+  function frageJaNein(titel, sub, jaText, gefaehrlich, cb) {
+    schliesseOffeneFrage();
+    confirmCb = cb;
+    classifyName = null; classifyDone = null; sheetCb = null;
+    $("sheetTitle").textContent = titel;
+    $("sheetSub").textContent = sub || "";
+    $("sheetBody").innerHTML = '<button class="btn' + (gefaehrlich ? " danger" : "") +
+      '" type="button" id="sheetYes">' + esc(jaText) + '</button>';
+    $("sheet").hidden = false;
+  }
+
+  // Offene Rueckfrage sauber als "abgebrochen" beenden, damit kein Rueckruf
+  // haengen bleibt, wenn ein Blatt das naechste ueberlagert.
+  function schliesseOffeneFrage() {
+    var t = textCb, c = confirmCb;
+    textCb = null; confirmCb = null;
+    if (t) t(null);
+    if (c) c(false);
+  }
+
   // Aktionsmenue: schliesst sofort bei der Auswahl
   function openSheet(title, sub, opts, cb) {
     sheetCb = cb;
@@ -1033,6 +1096,7 @@
   function closeSheet() {
     $("sheet").hidden = true;
     classifyName = null; classifyDone = null;
+    schliesseOffeneFrage();
     var cb = sheetCb;
     sheetCb = null;
     return cb;
@@ -1042,6 +1106,13 @@
     if (!e.target.closest) return;
     if (e.target.closest("[data-sheet-close]")) { closeSheet(); return; }
     if (e.target.closest("#sheetOk")) { applyClassify(); return; }
+    if (e.target.closest("#sheetTextOk")) { uebernimmText(); return; }
+    if (e.target.closest("#sheetYes")) {
+      var jc = confirmCb; confirmCb = null;
+      $("sheet").hidden = true;
+      if (jc) jc(true);
+      return;
+    }
 
     // Auswahl im Formular: markieren, aber nicht schliessen
     var pick = e.target.closest("[data-pick]");
@@ -1125,20 +1196,16 @@
 
   exSel.addEventListener("change", function () {
     if (exSel.value === "__new__") {
-      var name = (prompt("Name der Maschine / Übung:") || "").trim();
-      if (name) {
+      frageText("Neue Übung", "Name der Maschine oder Übung.", "", function (name) {
+        if (!name) { renderExercises(lastUsedExercise()); return; }
         var exists = allExercises().filter(function (n) { return n.toLowerCase() === name.toLowerCase(); })[0];
-        if (exists) { renderExercises(exists); }
-        else {
-          db.exercises.push(name);
-          save();
-          renderExercises(name);
-          // direkt einordnen, damit kein unzugeordneter Bestand entsteht
-          openClassify(name, function () { renderExercises(name); });
-        }
-      } else {
-        renderExercises(lastUsedExercise());
-      }
+        if (exists) { renderExercises(exists); return; }
+        db.exercises.push(name);
+        save();
+        renderExercises(name);
+        // direkt einordnen, damit kein unzugeordneter Bestand entsteht
+        openClassify(name, function () { renderExercises(name); });
+      });
     } else {
       updateHint();
       prefillFromLast();
@@ -1443,9 +1510,9 @@
     if (!e.target.closest) return;
     if (e.target.closest("#startSession")) { startSession(); return; }
     if (e.target.closest("#endSession")) {
-      var n = setsOfSession().length;
-      if (!n && !confirm("Training ohne eingetragene Sätze beenden?")) return;
-      endSession();
+      if (setsOfSession().length) { endSession(); return; }
+      frageJaNein("Training beenden?", "Es ist kein Satz eingetragen – die Einheit wird verworfen.",
+        "Beenden", false, function (ja) { if (ja) endSession(); });
     }
   });
 
@@ -1609,29 +1676,35 @@
   }
 
   function benenneUm(name) {
-    var eingabe = prompt("Neuer Name für „" + name + "“:", name);
-    if (eingabe === null) return;
-    eingabe = eingabe.trim();
-    if (!eingabe || eingabe === name) return;
+    frageText("Umbenennen", "Neuer Name für „" + name + "“.", name, function (eingabe) {
+      if (!eingabe || eingabe === name) return;
+      var kollision = allExercises().filter(function (n) {
+        return n.toLowerCase() === eingabe.toLowerCase();
+      })[0];
+      if (!kollision) { fuehreUmbenennungAus(name, eingabe, false); return; }
+      // Nachfrage erst im naechsten Zug, sonst ueberlagern sich zwei Blaetter
+      setTimeout(function () {
+        frageJaNein("„" + kollision + "“ gibt es bereits",
+          "Beide Historien zusammenführen? Die vorhandene Zuordnung bleibt erhalten.",
+          "Zusammenführen", false, function (ja) {
+            if (ja) fuehreUmbenennungAus(name, kollision, true);
+          });
+      }, 220);
+    });
+  }
 
-    var kollision = allExercises().filter(function (n) {
-      return n.toLowerCase() === eingabe.toLowerCase();
-    })[0];
-    if (kollision) {
-      if (!confirm("„" + kollision + "“ gibt es bereits.\nBeide Historien zusammenführen?")) return;
-      eingabe = kollision;
-    }
-    // Umbenennen nimmt Historie und Muskelgruppe mit; beim Zusammenführen
-    // behaelt die Ziel-Uebung ihre Gruppe, sofern sie eine hat.
-    db.sets.forEach(function (s) { if (s.exercise === name) s.exercise = eingabe; });
+  // Umbenennen nimmt Historie und Muskelgruppe mit; beim Zusammenführen
+  // behaelt die Ziel-Uebung ihre Gruppe, sofern sie eine hat.
+  function fuehreUmbenennungAus(name, ziel, zusammen) {
+    db.sets.forEach(function (s) { if (s.exercise === name) s.exercise = ziel; });
     db.exercises = db.exercises.filter(function (n) { return n !== name; });
-    if (db.exercises.indexOf(eingabe) === -1) db.exercises.push(eingabe);
-    if (!db.groups[eingabe] && db.groups[name]) db.groups[eingabe] = db.groups[name];
-    if (!db.moves[eingabe] && db.moves[name]) db.moves[eingabe] = db.moves[name];
+    if (db.exercises.indexOf(ziel) === -1) db.exercises.push(ziel);
+    if (!db.groups[ziel] && db.groups[name]) db.groups[ziel] = db.groups[name];
+    if (!db.moves[ziel] && db.moves[name]) db.moves[ziel] = db.moves[name];
     delete db.groups[name];
     delete db.moves[name];
-    save(); renderAll(); renderExercises(eingabe);
-    toast(kollision ? "Zusammengeführt" : "Übung umbenannt");
+    save(); renderAll(); renderExercises(ziel);
+    toast(zusammen ? "Zusammengeführt" : "Übung umbenannt");
   }
 
   $("manageExercise").addEventListener("click", function () {
@@ -2169,7 +2242,7 @@
   // ist – und im Zweifel das Loeschen und Neuanlegen des Symbols vom
   // Home-Bildschirm. Genau das loescht unter iOS den Speicher der App mit.
   // Ein Neuladen genuegt: der Service Worker holt die Seite netz-zuerst.
-  var APP_VERSION = "v20";
+  var APP_VERSION = "v21";
 
   function nachUpdateSuchen() {
     toast("Suche …");
@@ -2330,14 +2403,26 @@
   });
 
   $("wipeBtn").addEventListener("click", function () {
-    if (!confirm("Wirklich ALLE Trainingsdaten löschen? Das lässt sich nicht rückgängig machen.")) return;
-    if (!confirm("Sicher? Exportiere vorher ein Backup, falls du die Daten behalten willst.")) return;
-    var behalten = db.settings;
-    db = leer();
-    db.settings = behalten;
-    stopTicker(); stopRest();
-    editingId = null; editDay = null; undoSet = null; nachtragDatum = null;
-    save(); renderAll(); toast("Alle Daten gelöscht");
+    frageJaNein("Alle Trainingsdaten löschen?",
+      "Sämtliche Sätze, Übungen und Trainings dieses Geräts. Das lässt sich nicht rückgängig machen.",
+      "Löschen", true, function (ja) {
+        if (!ja) return;
+        // Zweite Stufe bewusst beibehalten: einstufig ist die Schwelle fuer eine
+        // unumkehrbare Loeschung zu niedrig.
+        setTimeout(function () {
+          frageJaNein("Wirklich sicher?",
+            "Exportiere vorher eine Sicherung, falls du die Daten behalten willst.",
+            "Endgültig löschen", true, function (sicher) {
+              if (!sicher) return;
+              var behalten = db.settings;
+              db = leer();
+              db.settings = behalten;
+              stopTicker(); stopRest();
+              editingId = null; editDay = null; undoSet = null; nachtragDatum = null;
+              save(); renderAll(); toast("Alle Daten gelöscht");
+            });
+        }, 220);
+      });
   });
 
   // ---------- Feedback ----------

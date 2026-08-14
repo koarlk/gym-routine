@@ -124,11 +124,10 @@
   .picker .cap {
     font-size: 13px; color: var(--muted); font-weight: 500; margin-bottom: 2px;
   }
-  .picker select {
-    -webkit-appearance: none; appearance: none;
-    width: 100%; background: transparent; border: 0; padding: 2px 32px 2px 0;
+  .picker .exname {
+    display: block; width: 100%; text-align: left;
+    background: transparent; border: 0; padding: 2px 32px 2px 0;
     font-size: 22px; font-weight: 700; letter-spacing: -.03em; line-height: 1.3;
-    outline: none;
     /* lange Maschinennamen sauber kuerzen statt hart abschneiden */
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     background-image:
@@ -138,7 +137,8 @@
     background-size: 6px 6px, 6px 6px;
     background-repeat: no-repeat;
   }
-  .picker select:focus { color: var(--accent); }
+  .picker .exname:active { color: var(--accent); }
+  .picker .exname.leer { color: var(--dim); }
 
   .hint {
     display: inline-flex; align-items: center; gap: 7px;
@@ -631,6 +631,50 @@
     margin: 4px 0 8px; letter-spacing: -.01em;
   }
   .sheet .lbl + .opts { margin-bottom: 18px; }
+
+  /* Schritt 1: Muskelgruppen */
+  .sheet .grpgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+  .sheet .grpgrid button {
+    display: flex; align-items: baseline; gap: 8px; text-align: left;
+    padding: 17px 14px; border-radius: var(--r-sm); background: var(--card-2);
+    font-size: 15.5px; font-weight: 650; letter-spacing: -.01em;
+    transition: background .15s;
+  }
+  .sheet .grpgrid button:active { background: var(--raise); }
+  .sheet .grpgrid b { font-weight: 650; }
+  .sheet .grpgrid span {
+    margin-left: auto; flex: none; font-size: 13px; color: var(--dim);
+    font-weight: 600; font-variant-numeric: tabular-nums;
+  }
+  .sheet .grpgrid button.on { background: var(--accent); color: var(--ink); }
+  .sheet .grpgrid button.on span { color: rgba(0, 0, 0, .5); }
+
+  /* Schritt 2: Maschinen der Gruppe */
+  .sheet .zurueck {
+    display: flex; align-items: center; gap: 7px; margin-top: 2px;
+    padding: 12px 4px; color: var(--muted); font-size: 14px; font-weight: 600;
+  }
+  .sheet .zurueck svg {
+    width: 15px; height: 15px; stroke: currentColor; stroke-width: 2.4;
+    fill: none; stroke-linecap: round; stroke-linejoin: round;
+  }
+  .sheet .exlist { display: grid; gap: 7px; margin-bottom: 6px; }
+  .sheet .exlist button {
+    display: flex; align-items: baseline; gap: 10px; text-align: left;
+    padding: 13px 14px; border-radius: var(--r-sm); background: var(--card-2);
+    transition: background .15s;
+  }
+  .sheet .exlist button:active { background: var(--raise); }
+  .sheet .exlist b {
+    font-size: 15.5px; font-weight: 650; letter-spacing: -.01em;
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .sheet .exlist span {
+    margin-left: auto; flex: none; font-size: 12.5px; color: var(--dim);
+    font-weight: 500; font-variant-numeric: tabular-nums;
+  }
+  .sheet .exlist button.on { background: var(--accent); color: var(--ink); }
+  .sheet .exlist button.on span { color: rgba(0, 0, 0, .55); }
   .sheet .opts { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
   .sheet .opts.three { grid-template-columns: repeat(3, 1fr); }
   .sheet .opts.three button { padding: 15px 4px; font-size: 14.5px; }
@@ -732,7 +776,11 @@
       <div class="picker">
         <div class="sel">
           <div class="cap">Maschine / Übung</div>
-          <select id="exercise" aria-label="Maschine oder Übung"></select>
+          <!-- Eigener Knopf statt <select>: das native Auswahlrad zeigt nur rund
+               fuenf Zeilen und kann Gruppen nicht anstaendig darstellen. -->
+          <button class="exname" id="exercisePick" type="button" aria-label="Maschine wählen">
+            <span id="exerciseName">Noch keine Übung</span>
+          </button>
         </div>
         <!-- Eigener Knopf statt nur des Listeneintrags: die Liste kann nichts
              ausloesen, wenn "Neue Übung" schon ausgewaehlt ist – dann waehlt
@@ -993,7 +1041,9 @@
 
   // ---------- DOM ----------
   var $ = function (id) { return document.getElementById(id); };
-  var exSel = $("exercise"), weightIn = $("weight"), repsIn = $("reps");
+  var weightIn = $("weight"), repsIn = $("reps");
+  // Gewaehlte Maschine. Frueher hielt das <select> diesen Zustand.
+  var gewaehlt = "";
 
   // ---------- Muskelgruppe wählen ----------
   var sheetCb = null;
@@ -1116,6 +1166,18 @@
     if (e.target.closest("[data-sheet-close]")) { closeSheet(); return; }
     if (e.target.closest("#sheetOk")) { applyClassify(); return; }
     if (e.target.closest("#sheetTextOk")) { uebernimmText(); return; }
+    // Zurueck muss die gemerkte Gruppe vergessen, sonst springt die Auswahl
+    // sofort wieder in sie hinein
+    if (e.target.closest("#grpBack")) { aktiveGruppe = null; oeffneUebungsauswahl(); return; }
+    var grpWahl = e.target.closest("[data-grp]");
+    if (grpWahl) { oeffneGruppe(+grpWahl.dataset.grp); return; }
+    var exWahl = e.target.closest("[data-ex]");
+    if (exWahl) {
+      $("sheet").hidden = true;
+      renderExercises(exWahl.dataset.ex);
+      prefillFromLast();
+      return;
+    }
     if (e.target.closest("#sheetYes")) {
       var jc = confirmCb; confirmCb = null;
       $("sheet").hidden = true;
@@ -1189,34 +1251,79 @@
 
   function renderExercises(selected) {
     var liste = allExercises();
-    var cur = selected || exSel.value;
-    exSel.innerHTML = "";
-
-    // Ohne Uebungen keinen "Neue Übung"-Eintrag: er waere der einzige und damit
-    // bereits ausgewaehlt – ein erneutes Auswaehlen loest kein change aus und
-    // die Liste bliebe eine Sackgasse. Dafuer gibt es den Plus-Knopf daneben.
-    if (!liste.length) {
-      var p = document.createElement("option");
-      p.value = ""; p.textContent = "Noch keine Übung";
-      exSel.appendChild(p);
-      exSel.disabled = true;
-      updateHint();
-      return;
-    }
-
-    exSel.disabled = false;
-    liste.forEach(function (n) {
-      var o = document.createElement("option");
-      o.value = n; o.textContent = n;
-      exSel.appendChild(o);
-    });
-    var o = document.createElement("option");
-    o.value = "__new__"; o.textContent = "＋ Neue Übung anlegen …";
-    exSel.appendChild(o);
-    if (cur && cur !== "__new__") exSel.value = cur;
-    if (!exSel.value) exSel.selectedIndex = 0;
+    var wunsch = selected || gewaehlt;
+    // Die Auswahl muss es noch geben – Umbenennen oder Loeschen kann sie
+    // unter der Hand entfernt haben.
+    gewaehlt = liste.indexOf(wunsch) >= 0 ? wunsch : (liste[0] || "");
+    var btn = $("exercisePick");
+    $("exerciseName").textContent = gewaehlt || "Noch keine Übung";
+    btn.classList.toggle("leer", !gewaehlt);
     updateHint();
   }
+
+  // Muskelgruppen in fester Folge, Unzugeordnetes am Ende. Leere entfallen.
+  function uebungsGruppen(liste) {
+    var out = [];
+    GROUPS.forEach(function (g) {
+      var items = liste.filter(function (x) { return (db.groups[x] || "") === g.k; });
+      if (items.length) out.push({ k: g.k, n: g.n, items: items });
+    });
+    var ohne = liste.filter(function (x) { return !db.groups[x]; });
+    if (ohne.length) out.push({ k: "", n: "Nicht zugeordnet", items: ohne });
+    return out;
+  }
+
+  // Zweistufig: erst die Muskelgruppe, dann die Maschine darin. Haelt beide
+  // Schritte kurz genug, dass nichts gescrollt werden muss.
+  var letzteGruppen = [];
+  // Innerhalb einer Einheit gemerkt: an einem Beintag will man nicht vor jedem
+  // Satz erneut durch die Gruppenauswahl. Beim Start eines neuen Trainings
+  // wieder leer, weil dann noch nicht feststeht, was trainiert wird.
+  var aktiveGruppe = null;
+
+  function oeffneUebungsauswahl() {
+    var liste = allExercises();
+    if (!liste.length) { neueUebung(); return; }
+    schliesseOffeneFrage();
+    classifyName = null; classifyDone = null; sheetCb = null;
+    letzteGruppen = uebungsGruppen(liste);
+    $("sheet").hidden = false;
+
+    if (aktiveGruppe !== null) {
+      for (var i = 0; i < letzteGruppen.length; i++) {
+        if (letzteGruppen[i].k === aktiveGruppe) { oeffneGruppe(i); return; }
+      }
+      aktiveGruppe = null;   // Gruppe gibt es nicht mehr
+    }
+
+    $("sheetTitle").textContent = "Muskelgruppe";
+    $("sheetSub").textContent = liste.length + (liste.length === 1 ? " Übung" : " Übungen");
+    $("sheetBody").innerHTML = '<div class="grpgrid">' +
+      letzteGruppen.map(function (g, i) {
+        return '<button type="button" data-grp="' + i + '">' +
+          '<b>' + esc(g.n) + '</b><span>' + g.items.length + '</span></button>';
+      }).join("") + '</div>';
+  }
+
+  function oeffneGruppe(i) {
+    var g = letzteGruppen[i];
+    if (!g) return;
+    aktiveGruppe = g.k;
+    $("sheetTitle").textContent = g.n;
+    $("sheetSub").textContent = g.items.length + (g.items.length === 1 ? " Übung" : " Übungen");
+    $("sheetBody").innerHTML = '<div class="exlist">' +
+      g.items.map(function (n) {
+        var l = lastSetFor(n);
+        return '<button type="button" data-ex="' + esc(n) + '"' +
+          (n === gewaehlt ? ' class="on"' : '') + '><b>' + esc(n) + '</b><span>' +
+          (l ? fmtWeight(l.weight) + " kg × " + l.reps : "noch kein Satz") +
+          '</span></button>';
+      }).join("") +
+      '</div><button class="zurueck" type="button" id="grpBack">' +
+      '<svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>Alle Gruppen</button>';
+  }
+
+  $("exercisePick").addEventListener("click", oeffneUebungsauswahl);
 
   function neueUebung() {
     frageText("Neue Übung", "Name der Maschine oder Übung.", "", function (name) {
@@ -1233,14 +1340,6 @@
 
   $("newExercise").addEventListener("click", neueUebung);
 
-  exSel.addEventListener("change", function () {
-    if (exSel.value === "__new__") {
-      neueUebung();
-    } else {
-      updateHint();
-      prefillFromLast();
-    }
-  });
 
   function lastUsedExercise() {
     return db.sets.length ? db.sets[db.sets.length - 1].exercise : null;
@@ -1263,8 +1362,8 @@
   }
 
   function updateHint() {
-    var ex = exSel.value;
-    if (!ex || ex === "__new__") {
+    var ex = gewaehlt;
+    if (!ex) {
       $("lastHint").textContent = "Tipp auf ＋, um deine erste Maschine anzulegen";
       return;
     }
@@ -1281,7 +1380,7 @@
   }
 
   function prefillFromLast() {
-    var last = lastSetFor(exSel.value);
+    var last = lastSetFor(gewaehlt);
     if (last) { weightIn.value = last.weight; repsIn.value = last.reps; }
   }
 
@@ -1323,6 +1422,8 @@
 
   function startSession() {
     db.session = { start: Date.now() };
+    // Neues Training: noch keine Gruppe vorgewaehlt
+    aktiveGruppe = null;
     save();
     renderAll();
     startTicker();
@@ -1585,8 +1686,8 @@
   $("saveSet").addEventListener("click", function () {
     // Eine Korrektur braucht keine laufende Einheit, ein Nachtrag ebenfalls nicht.
     if (!db.session && !nachtragDatum && !editingId) { toast("Erst Training starten", "warn"); return; }
-    var ex = exSel.value;
-    if (!ex || ex === "__new__") {
+    var ex = gewaehlt;
+    if (!ex) {
       toast(allExercises().length ? "Bitte Übung wählen" : "Erst eine Übung anlegen", "warn");
       return;
     }
@@ -1741,8 +1842,8 @@
   }
 
   $("manageExercise").addEventListener("click", function () {
-    var name = exSel.value;
-    if (!name || name === "__new__") { toast("Keine Übung gewählt", "warn"); return; }
+    var name = gewaehlt;
+    if (!name) { toast("Keine Übung gewählt", "warn"); return; }
     var anzahl = db.sets.filter(function (s) { return s.exercise === name; }).length;
     openSheet(name, groupName(db.groups[name] || "") + " · " + moveName(db.moves[name] || "") +
       " · " + nSets(anzahl), [
@@ -2275,7 +2376,7 @@
   // ist – und im Zweifel das Loeschen und Neuanlegen des Symbols vom
   // Home-Bildschirm. Genau das loescht unter iOS den Speicher der App mit.
   // Ein Neuladen genuegt: der Service Worker holt die Seite netz-zuerst.
-  var APP_VERSION = "v22";
+  var APP_VERSION = "v23";
 
   function nachUpdateSuchen() {
     toast("Suche …");

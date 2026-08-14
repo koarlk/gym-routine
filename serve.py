@@ -14,6 +14,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
         # damit Aenderungen sofort ankommen und der Service Worker nicht veraltet
         self.send_header("Cache-Control", "no-store")
+        # JSON zum Herunterladen anbieten statt anzuzeigen: so landet eine
+        # Sicherung am iPhone in der Dateien-App und laesst sich importieren,
+        # ohne sie vorher per AirDrop zu uebertragen.
+        # Nur Sicherungen, nicht manifest.json - das muss die App normal lesen.
+        name = os.path.basename(self.path.split("?")[0])
+        if name.startswith("gym-backup-") and name.endswith(".json"):
+            self.send_header("Content-Disposition", 'attachment; filename="%s"' % name)
         super().end_headers()
 
     def log_message(self, *a):

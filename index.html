@@ -172,6 +172,10 @@
   .field > .cap {
     font-size: 13px; color: var(--muted); font-weight: 500; margin-bottom: 8px; padding-left: 2px;
   }
+  /* Die Schrittweite steht dabei, sonst ueberrascht ein Sprung von 10 kg.
+     Nur wenn sie vom Ueblichen abweicht – 2,5 kg ist stillschweigend gesetzt. */
+  .field > .cap .step { color: var(--dim); }
+  .field > .cap .step:not(:empty)::before { content: " · "; }
   .dial { display: flex; align-items: center; gap: 12px; }
   .dial .round {
     flex: none; width: 58px; height: 58px; border-radius: 50%;
@@ -646,6 +650,10 @@
     margin: 4px 0 8px; letter-spacing: -.01em;
   }
   .sheet .lbl + .opts { margin-bottom: 18px; }
+  /* Der Hinweis aus der Historie steht neben der Beschriftung, nicht darunter:
+     eine eigene Zeile waere hier zu viel Gewicht fuer einen Vorschlag. */
+  .sheet .lbl em { font-style: normal; font-weight: 500; color: var(--dim); }
+  .sheet .lbl em::before { content: "· "; }
 
   /* Schritt 1: Muskelgruppen */
   .sheet .grpgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
@@ -810,14 +818,14 @@
       <div class="hint" id="lastHint"></div>
 
       <div class="field">
-        <div class="cap">Gewicht</div>
+        <div class="cap">Gewicht<span class="step" id="stepHint"></span></div>
         <div class="dial">
-          <button class="round" type="button" data-step="weight" data-delta="-2.5" aria-label="2,5 kg weniger">−</button>
+          <button class="round" type="button" data-step="weight" data-delta="-1" id="wDown" aria-label="weniger Gewicht">−</button>
           <div class="val">
             <input id="weight" type="number" inputmode="decimal" step="0.5" min="0" value="20" aria-label="Gewicht in Kilogramm">
             <span class="unit">kg</span>
           </div>
-          <button class="round" type="button" data-step="weight" data-delta="2.5" aria-label="2,5 kg mehr">+</button>
+          <button class="round" type="button" data-step="weight" data-delta="1" id="wUp" aria-label="mehr Gewicht">+</button>
         </div>
       </div>
 
@@ -986,6 +994,7 @@
         d.backup = (d.backup && typeof d.backup === "object") ? d.backup : { at: 0, due: 0 };
         d.groups = (d.groups && typeof d.groups === "object") ? d.groups : {};
         d.moves = (d.moves && typeof d.moves === "object") ? d.moves : {};
+        d.steps = (d.steps && typeof d.steps === "object") ? d.steps : {};
         startZustand = "ok";
         return migrate(d);
       }
@@ -1002,8 +1011,20 @@
   function leer() {
     return {
       sets: [], exercises: DEFAULT_EXERCISES.slice(), settings: normSettings(null),
-      workouts: {}, session: null, backup: { at: 0, due: 0 }, groups: {}, moves: {}, v: 2
+      workouts: {}, session: null, backup: { at: 0, due: 0 }, groups: {}, moves: {},
+      steps: {}, v: 2
     };
+  }
+
+  // Schrittweite der Gewichtstasten je Maschine. 2,5 kg passt an den meisten
+  // Geraeten, an der Beinpresse nicht: von 20 auf 45 kg waren das 13 Tipps.
+  // Fehlt ein Eintrag, bleibt es beim bisherigen Verhalten.
+  var STEP_DEFAULT = 2.5;
+  var STEPS = [0.5, 1, 2.5, 5, 10, 20];
+
+  function weightStep(name) {
+    var s = db.steps[name];
+    return STEPS.indexOf(s) === -1 ? STEP_DEFAULT : s;
   }
 
   // Pausenlaenge: 15–600 Sek, Standard 90. Wird beim Nachjustieren fortgeschrieben.
@@ -1139,18 +1160,30 @@
     classifyName = name;
     classifyDone = done || null;
     var g = db.groups[name] || "", m = db.moves[name] || "";
-    function feld(set, liste, aktiv) {
-      return '<div class="opts' + (liste.length === 3 ? " three" : "") + '" data-set="' + set + '">' +
+    // Dreispaltig, wo die Beschriftungen kurz sind – bei sechs Schrittweiten
+    // ergibt das zwei Zeilen statt drei und das Blatt bleibt ohne Scrollen.
+    function feld(set, liste, aktiv, drei) {
+      return '<div class="opts' + (drei ? " three" : "") + '" data-set="' + set + '">' +
         liste.map(function (o) {
           return '<button type="button" data-pick="' + o.k + '"' +
             (o.k === aktiv ? ' class="on"' : "") + '>' + esc(o.n) + '</button>';
         }).join("") + '</div>';
     }
+    var schritte = STEPS.map(function (s) {
+      return { k: String(s), n: fmtWeight(s) + " kg" };
+    });
+    var tipp = vorschlagSchritt(name);
     $("sheetTitle").textContent = name;
-    $("sheetSub").textContent = "Bestimmt, wie diese Maschine in die Auswertung eingeht.";
+    $("sheetSub").textContent = "Muskelgruppe und Bewegung steuern die Auswertung, " +
+      "die Schrittweite die Gewichtstasten.";
     $("sheetBody").innerHTML =
-      '<div class="lbl">Muskelgruppe</div>' + feld("grp", GROUPS, g) +
-      '<div class="lbl">Bewegung</div>' + feld("mov", MOVES, m) +
+      // Dreispaltig auch hier: mit dem dritten Feld waere das Blatt sonst
+      // 28 px zu hoch und der Uebernehmen-Knopf laege unter der Kante.
+      '<div class="lbl">Muskelgruppe</div>' + feld("grp", GROUPS, g, true) +
+      '<div class="lbl">Bewegung</div>' + feld("mov", MOVES, m, true) +
+      '<div class="lbl">Schrittweite' +
+        (tipp ? ' <em>bisher alles in ' + fmtWeight(tipp) + ' kg</em>' : "") +
+      '</div>' + feld("stp", schritte, String(weightStep(name)), true) +
       '<button class="btn" type="button" id="sheetOk">Übernehmen</button>';
     $("sheet").hidden = false;
   }
@@ -1158,8 +1191,16 @@
   function applyClassify() {
     var g = $("sheetBody").querySelector('[data-set="grp"] .on');
     var m = $("sheetBody").querySelector('[data-set="mov"] .on');
+    var st = $("sheetBody").querySelector('[data-set="stp"] .on');
     if (g) db.groups[classifyName] = g.dataset.pick;
     if (m) db.moves[classifyName] = m.dataset.pick;
+    if (st) {
+      var s = parseFloat(st.dataset.pick);
+      // Der Standard bleibt ein leerer Eintrag – so heisst "nichts gesetzt"
+      // auch im Export nichts gesetzt.
+      if (s === STEP_DEFAULT) delete db.steps[classifyName];
+      else if (STEPS.indexOf(s) !== -1) db.steps[classifyName] = s;
+    }
     var done = classifyDone;
     classifyName = null; classifyDone = null;
     $("sheet").hidden = true;
@@ -1274,6 +1315,16 @@
     $("exerciseName").textContent = gewaehlt || "Noch keine Übung";
     btn.classList.toggle("leer", !gewaehlt);
     updateHint();
+    zeigeSchrittweite();
+  }
+
+  // Die Tasten tragen keine feste Zahl mehr, also muss die Beschriftung fuer
+  // Sprachausgabe und Auge der Maschine folgen.
+  function zeigeSchrittweite() {
+    var s = weightStep(gewaehlt);
+    $("stepHint").textContent = s === STEP_DEFAULT ? "" : fmtWeight(s) + " kg Schritte";
+    $("wDown").setAttribute("aria-label", fmtWeight(s) + " kg weniger");
+    $("wUp").setAttribute("aria-label", fmtWeight(s) + " kg mehr");
   }
 
   // Muskelgruppen in fester Folge, Unzugeordnetes am Ende. Leere entfallen.
@@ -1689,10 +1740,12 @@
   document.querySelectorAll("[data-step]").forEach(function (b) {
     b.addEventListener("click", function () {
       var input = $(b.dataset.step);
-      var delta = parseFloat(b.dataset.delta);
+      var reps = b.dataset.step === "reps";
+      // Wiederholungen bleiben bei +-1, das Gewicht fragt die Maschine.
+      // data-delta traegt nur noch das Vorzeichen.
+      var delta = parseFloat(b.dataset.delta) * (reps ? 1 : weightStep(gewaehlt));
       var v = (parseFloat(input.value) || 0) + delta;
-      var min = b.dataset.step === "reps" ? 1 : 0;
-      input.value = Math.max(min, Math.round(v * 10) / 10);
+      input.value = Math.max(reps ? 1 : 0, Math.round(v * 10) / 10);
       haptic();
     });
   });
@@ -1812,6 +1865,45 @@
     openClassify(name);
   }
 
+  // Vorschlag aus der Historie: die kleinste Stufe, in der alle bisherigen
+  // Gewichte dieser Maschine aufgehen. Zwingt nichts auf, spart nur das
+  // Nachdenken – wer 80 und 90 kg gedrueckt hat, will keine 2,5er-Schritte.
+  function vorschlagSchritt(name) {
+    var w = db.sets.filter(function (s) { return s.exercise === name && s.weight > 0; })
+      .map(function (s) { return s.weight; });
+    // Mindestens zwei verschiedene Gewichte, sonst ist der Vorschlag Unsinn:
+    // wer an einer Maschine bisher nur 10 kg genommen hat, bekaeme 10-kg-Sprünge
+    // vorgeschlagen – ausgerechnet dort, wo es fein zugehen muss.
+    var versch = {}; w.forEach(function (x) { versch[x] = 1; });
+    if (Object.keys(versch).length < 2) return null;
+    for (var i = STEPS.length - 1; i >= 0; i--) {
+      var passt = w.every(function (x) {
+        return Math.abs(x / STEPS[i] - Math.round(x / STEPS[i])) < 1e-9;
+      });
+      if (passt) return STEPS[i];
+    }
+    return null;
+  }
+
+  function setzeSchrittweite(name) {
+    var jetzt = weightStep(name);
+    var tipp = vorschlagSchritt(name);
+    openSheet(name, "Um wie viel springen die Gewichtstasten an dieser Maschine?" +
+      (tipp && tipp !== jetzt ? " Deine bisherigen Gewichte gehen in " +
+        fmtWeight(tipp) + " kg auf." : ""),
+      STEPS.map(function (s) {
+        return { k: String(s), n: fmtWeight(s) + " kg", on: s === jetzt };
+      }), function (wahl) {
+        var s = parseFloat(wahl);
+        if (STEPS.indexOf(s) === -1) return;
+        // Der Standard kommt nicht in den Bestand: so bleibt eine Maschine
+        // ohne Eintrag genau das, und der Export bleibt schlank.
+        if (s === STEP_DEFAULT) delete db.steps[name]; else db.steps[name] = s;
+        save(); renderAll(); zeigeSchrittweite();
+        toast(fmtWeight(s) + " kg Schritte");
+      });
+  }
+
   function loescheUebung(name, anzahl) {
     if (anzahl) {
       alert("„" + name + "“ hat " + nSets(anzahl) + " und kann nicht gelöscht werden.\n" +
@@ -1821,6 +1913,7 @@
     db.exercises = db.exercises.filter(function (n) { return n !== name; });
     delete db.groups[name];
     delete db.moves[name];
+    delete db.steps[name];
     save(); renderAll(); toast("Übung gelöscht");
   }
 
@@ -1850,8 +1943,10 @@
     if (db.exercises.indexOf(ziel) === -1) db.exercises.push(ziel);
     if (!db.groups[ziel] && db.groups[name]) db.groups[ziel] = db.groups[name];
     if (!db.moves[ziel] && db.moves[name]) db.moves[ziel] = db.moves[name];
+    if (!db.steps[ziel] && db.steps[name]) db.steps[ziel] = db.steps[name];
     delete db.groups[name];
     delete db.moves[name];
+    delete db.steps[name];
     save(); renderAll(); renderExercises(ziel);
     toast(zusammen ? "Zusammengeführt" : "Übung umbenannt");
   }
@@ -1861,12 +1956,14 @@
     if (!name) { toast("Keine Übung gewählt", "warn"); return; }
     var anzahl = db.sets.filter(function (s) { return s.exercise === name; }).length;
     openSheet(name, groupName(db.groups[name] || "") + " · " + moveName(db.moves[name] || "") +
-      " · " + nSets(anzahl), [
+      " · " + fmtWeight(weightStep(name)) + " kg Schritte · " + nSets(anzahl), [
       { k: "grp", n: "Einordnen" },
+      { k: "stp", n: "Schrittweite" },
       { k: "ren", n: "Umbenennen" },
       { k: "del", n: "Löschen" }
     ], function (aktion) {
       if (aktion === "grp") setzeGruppe(name);
+      else if (aktion === "stp") setzeSchrittweite(name);
       else if (aktion === "ren") benenneUm(name);
       else if (aktion === "del") loescheUebung(name, anzahl);
     });
@@ -2382,6 +2479,8 @@
     Object.keys(gr).forEach(function (n) { if (!db.groups[n]) db.groups[n] = gr[n]; });
     var mv = (d.moves && typeof d.moves === "object") ? d.moves : {};
     Object.keys(mv).forEach(function (n) { if (!db.moves[n]) db.moves[n] = mv[n]; });
+    var st = (d.steps && typeof d.steps === "object") ? d.steps : {};
+    Object.keys(st).forEach(function (n) { if (!db.steps[n]) db.steps[n] = st[n]; });
     return neu;
   }
 
@@ -2392,7 +2491,7 @@
   // ist – und im Zweifel das Loeschen und Neuanlegen des Symbols vom
   // Home-Bildschirm. Genau das loescht unter iOS den Speicher der App mit.
   // Ein Neuladen genuegt: der Service Worker holt die Seite netz-zuerst.
-  var APP_VERSION = "v24";
+  var APP_VERSION = "v25";
 
   function nachUpdateSuchen() {
     toast("Suche …");
@@ -2499,7 +2598,8 @@
   function exportDaten() {
     var kopie = {
       sets: db.sets, exercises: db.exercises, settings: db.settings,
-      workouts: db.workouts, groups: db.groups, moves: db.moves, v: db.v
+      workouts: db.workouts, groups: db.groups, moves: db.moves,
+      steps: db.steps, v: db.v
     };
     var json = JSON.stringify(kopie, null, 2);
     var name = "gym-backup-" + todayKey() + ".json";

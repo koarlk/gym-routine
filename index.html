@@ -48,7 +48,16 @@
     font: 17px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
     -webkit-font-smoothing: antialiased;
     -webkit-tap-highlight-color: transparent;
-    padding-bottom: calc(84px + env(safe-area-inset-bottom));
+    /* App-Shell: Kopf und Tab-Leiste sind feste Zeilen, gescrollt wird nur der
+       Inhalt dazwischen. Vorher scrollte das Dokument und die Leiste lag bloss
+       fixiert darueber – in iOS Safari haengt die Position einer fixierten
+       Leiste dann davon ab, ob die Adressleiste gerade eingeklappt ist, und die
+       klappt nur bei scrollbaren Seiten ein. Die Uebersicht passt bewusst auf
+       einen Screen, war also die einzige Ansicht ohne Scrollbereich und die
+       einzige, in der die Leiste rund 40 pt zu hoch sass. */
+    height: 100vh; height: 100dvh;
+    display: flex; flex-direction: column;
+    overflow: hidden;
     overscroll-behavior-y: none;
     touch-action: manipulation;
     -webkit-user-select: none; user-select: none;
@@ -67,7 +76,7 @@
 
   /* ---------------- Kopf ---------------- */
   header {
-    position: sticky; top: 0; z-index: 20;
+    flex: none; z-index: 20;
     background: linear-gradient(rgba(8, 9, 13, .95), rgba(8, 9, 13, .72));
     backdrop-filter: saturate(180%) blur(20px);
     -webkit-backdrop-filter: saturate(180%) blur(20px);
@@ -88,9 +97,15 @@
     margin-left: auto; color: var(--muted); font-size: 13.5px; font-weight: 500;
   }
 
+  /* min-height: 0 ist noetig, sonst waechst ein Flex-Kind ueber den Container
+     hinaus statt zu scrollen. overscroll-behavior verhindert, dass am Listenende
+     stattdessen die ganze Seite mitwippt. */
   main {
+    flex: 1 1 auto; min-height: 0;
+    overflow-y: auto; -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
     padding: 8px calc(20px + env(safe-area-inset-right)) 16px calc(20px + env(safe-area-inset-left));
-    max-width: 620px; margin: 0 auto;
+    max-width: 620px; margin: 0 auto; width: 100%; box-sizing: border-box;
   }
   .view { display: none; }
   /* Nur opacity animieren: ein transform hier wuerde einen Containing Block
@@ -711,7 +726,7 @@
 
   /* ---------------- Tab-Leiste ---------------- */
   nav {
-    position: fixed; bottom: 0; left: 0; right: 0; z-index: 30;
+    flex: none; z-index: 30;
     display: flex; justify-content: center; gap: 4px;
     background: linear-gradient(rgba(8, 9, 13, .72), rgba(8, 9, 13, .96));
     backdrop-filter: saturate(180%) blur(20px);
@@ -2322,7 +2337,8 @@
     document.querySelectorAll(".view").forEach(function (x) {
       x.classList.toggle("active", x.id === "view-" + name);
     });
-    window.scrollTo(0, 0);
+    // Gescrollt wird der Inhaltsbereich, nicht das Dokument.
+    document.querySelector("main").scrollTop = 0;
   }
 
   document.querySelectorAll("nav button").forEach(function (b) {
@@ -2376,7 +2392,7 @@
   // ist – und im Zweifel das Loeschen und Neuanlegen des Symbols vom
   // Home-Bildschirm. Genau das loescht unter iOS den Speicher der App mit.
   // Ein Neuladen genuegt: der Service Worker holt die Seite netz-zuerst.
-  var APP_VERSION = "v23";
+  var APP_VERSION = "v24";
 
   function nachUpdateSuchen() {
     toast("Suche …");

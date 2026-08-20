@@ -167,6 +167,30 @@
     background: var(--dim); flex: none;
   }
 
+  /* Aufwaermvorschlag vor dem ersten Satz. Reine Anzeige, nichts antippbar –
+     die Saetze werden bewusst nicht gespeichert, sonst zoege ein Aufwaermsatz
+     mit 40 % Volumen in jede Statistik ein. */
+  .warmup {
+    margin: 10px 0 2px; padding: 11px 13px;
+    background: var(--card-2); border-radius: var(--r-sm);
+    border: 1px solid var(--hair);
+  }
+  .warmup h3 {
+    margin: 0 0 8px; font-size: 12px; font-weight: 650;
+    letter-spacing: .07em; text-transform: uppercase; color: var(--dim);
+  }
+  .warmup ol { margin: 0; padding: 0; list-style: none; }
+  .warmup li {
+    display: flex; align-items: baseline; gap: 9px;
+    padding: 4px 0; font-size: 14.5px; color: var(--muted);
+  }
+  .warmup li + li { border-top: 1px solid var(--hair); }
+  .warmup .nr {
+    flex: none; width: 17px; font-size: 11.5px; color: var(--dim);
+    font-variant-numeric: tabular-nums;
+  }
+  .warmup .kg { color: var(--text); font-weight: 650; }
+
   /* ---------------- Zahlen-Eingabe ---------------- */
   .field { margin-top: 18px; }
   .field > .cap {
@@ -816,6 +840,7 @@
         </button>
       </div>
       <div class="hint" id="lastHint"></div>
+      <div id="warmup"></div>
 
       <div class="field">
         <div class="cap">Gewicht<span class="step" id="stepHint"></span></div>
@@ -1316,6 +1341,7 @@
     btn.classList.toggle("leer", !gewaehlt);
     updateHint();
     zeigeSchrittweite();
+    renderWarmup();
   }
 
   // Die Tasten tragen keine feste Zahl mehr, also muss die Beschriftung fuer
@@ -1325,6 +1351,55 @@
     $("stepHint").textContent = s === STEP_DEFAULT ? "" : fmtWeight(s) + " kg Schritte";
     $("wDown").setAttribute("aria-label", fmtWeight(s) + " kg weniger");
     $("wUp").setAttribute("aria-label", fmtWeight(s) + " kg mehr");
+  }
+
+  // ---------- Aufwaermen ----------
+  // Ramp-up vor dem ersten Satz einer Einheit. Bewusst reine Anzeige: Wuerden
+  // die Aufwaermsaetze in db.sets landen, zoege ihr Volumen rueckwirkend in
+  // jede Auswertung ein und Wochen mit und ohne Protokoll waeren nicht mehr
+  // vergleichbar. Nichts hier ist antippbar.
+  var WARM_3 = [{ p: 0.4, r: 10 }, { p: 0.6, r: 6 }, { p: 0.8, r: 3 }];
+  var WARM_2 = [{ p: 0.5, r: 8 }, { p: 0.75, r: 4 }];
+
+  // Drei Stufen, wenn zwischen leer und Arbeitsgewicht genug Rasten liegen.
+  // Die zweite Bedingung faengt ab, dass eine gepflegte grobe Schrittweite die
+  // Rastenzahl drueckt: die Beinpresse mit 10-kg-Platten ist das schwerste
+  // Geraet und bekaeme sonst weniger Stufen als die Brustpresse.
+  function warmSets(basis, step) {
+    var plan = (basis / step >= 16 || step >= 5) ? WARM_3 : WARM_2;
+    var out = [], gesehen = {};
+    plan.forEach(function (st) {
+      var w = Math.round(Math.round(basis * st.p / step) * step * 10) / 10;
+      // Nullstufen, Dubletten und alles ab dem Arbeitsgewicht sind kein
+      // Aufwaermen mehr – lieber weglassen als das Schema verbiegen.
+      if (w <= 0 || w >= basis || gesehen[w]) return;
+      gesehen[w] = 1;
+      out.push({ w: w, r: st.r });
+    });
+    // Was von zwei Stufen uebrig bleibt, ist kein Ramp-up: dann lieber nichts.
+    return out.length >= 2 ? out : [];
+  }
+
+  function renderWarmup() {
+    var el = $("warmup");
+    // Nur vor dem ersten Satz der laufenden Einheit. Nachtrag und Korrektur
+    // eines vergangenen Satzes zeigen dieselbe Eingabekarte – dort waere ein
+    // Aufwaermvorschlag sinnlos.
+    if (!db.session || nachtragDatum || editingId || setsOfSession().length) {
+      el.innerHTML = ""; return;
+    }
+    // Ohne gespeicherten Satz gibt es kein belastbares Arbeitsgewicht; im Feld
+    // stuende dann nur der Rest der vorher gewaehlten Uebung.
+    if (!gewaehlt || !lastSetFor(gewaehlt)) { el.innerHTML = ""; return; }
+    var basis = parseFloat(weightIn.value);
+    if (isNaN(basis) || basis <= 0) { el.innerHTML = ""; return; }
+    var saetze = warmSets(basis, weightStep(gewaehlt));
+    if (!saetze.length) { el.innerHTML = ""; return; }
+    el.innerHTML = '<div class="warmup"><h3>Aufwärmen</h3><ol>' +
+      saetze.map(function (s, i) {
+        return '<li><span class="nr">' + (i + 1) + '.</span><span>' +
+          '<span class="kg">' + fmtWeight(s.w) + ' kg</span> × ' + s.r + '</span></li>';
+      }).join("") + '</ol></div>';
   }
 
   // Muskelgruppen in fester Folge, Unzugeordnetes am Ende. Leere entfallen.
@@ -1448,6 +1523,7 @@
   function prefillFromLast() {
     var last = lastSetFor(gewaehlt);
     if (last) { weightIn.value = last.weight; repsIn.value = last.reps; }
+    renderWarmup();
   }
 
   // ---------- Trainingseinheit ----------
@@ -1746,9 +1822,13 @@
       var delta = parseFloat(b.dataset.delta) * (reps ? 1 : weightStep(gewaehlt));
       var v = (parseFloat(input.value) || 0) + delta;
       input.value = Math.max(reps ? 1 : 0, Math.round(v * 10) / 10);
+      if (!reps) renderWarmup();
       haptic();
     });
   });
+
+  // Getipptes Gewicht: die Aufwaermstufen sind Prozente davon.
+  weightIn.addEventListener("input", renderWarmup);
 
   // ---------- Satz speichern ----------
   $("saveSet").addEventListener("click", function () {
@@ -1842,6 +1922,9 @@
     $("saveSet").textContent = "Satz speichern";
     $("editBar").innerHTML = "";
     renderSession(); renderToday(); renderHistory();
+    // Die Korrektur hat den Aufwaermvorschlag verdraengt. Steht die Einheit
+    // noch bei null Saetzen, gehoert er nach dem Abbrechen wieder hin.
+    renderWarmup();
     if (editFrom && editFrom !== "log") zeigeView(editFrom);
     editFrom = null;
   }
@@ -2148,6 +2231,7 @@
     if (editingId) cancelEdit();
     nachtragDatum = k;
     renderSession(); renderToday(); renderHistory();
+    renderWarmup();   // im Nachtrag gibt es nichts aufzuwaermen
     zeigeView("log");
   }
 
@@ -2155,6 +2239,7 @@
     if (!nachtragDatum) return;
     nachtragDatum = null;
     renderSession(); renderToday(); renderHistory();
+    renderWarmup();
     zeigeView("history");
   }
 
@@ -2491,7 +2576,7 @@
   // ist – und im Zweifel das Loeschen und Neuanlegen des Symbols vom
   // Home-Bildschirm. Genau das loescht unter iOS den Speicher der App mit.
   // Ein Neuladen genuegt: der Service Worker holt die Seite netz-zuerst.
-  var APP_VERSION = "v25";
+  var APP_VERSION = "v26";
 
   function nachUpdateSuchen() {
     toast("Suche …");

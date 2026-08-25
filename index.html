@@ -2409,15 +2409,15 @@
       '<i style="background:rgba(204,255,77,.72)"></i>' +
       '<i style="background:var(--accent)"></i><span>mehr</span></div></div>';
 
-    // --- letzte 30 Tage ---
-    var since = addDays(today, -29);
+    // --- letzte 90 Tage ---
+    var since = addDays(today, -89);
     var recent = db.sets.filter(function (s) {
       var p = s.date.split("-");
       return new Date(+p[0], +p[1] - 1, +p[2]) >= since;
     });
     var rDays = {};
     recent.forEach(function (s) { rDays[s.date] = 1; });
-    html += '<div class="section-head"><h2>Letzte 30 Tage</h2></div><div class="tiles">' +
+    html += '<div class="section-head"><h2>Letzte 90 Tage</h2></div><div class="tiles">' +
       tile(Object.keys(rDays).length, "Trainings") +
       tile(recent.length, recent.length === 1 ? "Satz" : "Sätze") +
       tile(fmtVolume(volume(recent)), "Volumen") +

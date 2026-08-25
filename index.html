@@ -167,6 +167,13 @@
     background: var(--dim); flex: none;
   }
 
+  /* Steigerungsindikator: eigene Zeile, weil die "Zuletzt"-Zeile mit Datum und
+     Bestleistung auf dem iPhone sonst umbricht. Farbig wird nur der fertige
+     Befund - der Zwischenstand soll den Blick nicht jedes Mal einfangen. */
+  .hint.prog { margin: 2px 0 4px; }
+  .hint.prog.ready { color: var(--accent); }
+  .hint.prog.ready::before { background: var(--accent); }
+
   /* Aufwaermvorschlag vor dem ersten Satz. Reine Anzeige, nichts antippbar –
      die Saetze werden bewusst nicht gespeichert, sonst zoege ein Aufwaermsatz
      mit 40 % Volumen in jede Statistik ein. */
@@ -840,6 +847,7 @@
         </button>
       </div>
       <div class="hint" id="lastHint"></div>
+      <div id="progHint"></div>
       <div id="warmup"></div>
 
       <div class="field">
@@ -1340,6 +1348,7 @@
     $("exerciseName").textContent = gewaehlt || "Noch keine Übung";
     btn.classList.toggle("leer", !gewaehlt);
     updateHint();
+    renderProg();
     zeigeSchrittweite();
     renderWarmup();
   }
@@ -1518,6 +1527,85 @@
       html += " · Best <b>" + fmtWeight(best.weight) + " kg × " + best.reps + "</b>";
     }
     $("lastHint").innerHTML = html;
+  }
+
+  // ---------- Steigerungsindikator ----------
+  // Die Frage "kann ich mehr auflegen?" beantwortet das Volumen nicht: es
+  // multipliziert Satzzahl und Aufwaermgewichte in die Leistung hinein und
+  // meldet dann Bereitschaft, weil man sich gruendlich angenaehert hat.
+  // Gemessen wird nur am Soll-Gewicht - dem schwersten Gewicht, an dem an dem
+  // Tag mindestens zwei Saetze liegen. Ein einzelner Spitzensatz ist kein
+  // Durchschnitt und taugt nicht als Beleg.
+  var PROG_REPS = 12;    // Zielwiederholungen je Satz
+  var PROG_NEED = 3;     // bestandene Einheiten in Folge
+  var PROG_TAGE = 56;    // acht Wochen; Aelteres zaehlt nicht mehr, nach einer
+                         // Pause ist man schwaecher und nicht staerker
+
+  // Urteil ueber einen einzelnen Trainingstag. null, wenn kein Gewicht zweimal
+  // vorkam: eine reine Pyramide gibt keinen belastbaren Durchschnitt her.
+  function progUrteil(saetze) {
+    var zahl = {};
+    saetze.forEach(function (s) { zahl[s.weight] = (zahl[s.weight] || 0) + 1; });
+    var soll = null;
+    Object.keys(zahl).forEach(function (w) {
+      if (zahl[w] >= 2 && (soll === null || +w > soll)) soll = +w;
+    });
+    if (soll === null) return null;
+    var am = saetze.filter(function (s) { return s.weight === soll; });
+    var summe = am.reduce(function (a, s) { return a + s.reps; }, 0);
+    return { weight: soll, avg: summe / am.length };
+  }
+
+  // Trainingstage einer Uebung, neueste zuerst. Laeuft gerade eine Einheit,
+  // bleibt der heutige Tag aussen vor - sonst spraenge die Zeile nach jedem
+  // Satz, und nach dem ersten Satz am Soll-Gewicht sagt sie ohnehin nichts.
+  function progTage(ex) {
+    var ab = dayKey(addDays(new Date(), -(PROG_TAGE - 1)));
+    var heute = todayKey();
+    var proTag = {};
+    db.sets.forEach(function (s) {
+      if (s.exercise !== ex || s.date < ab) return;
+      if (db.session && s.date === heute) return;
+      (proTag[s.date] = proTag[s.date] || []).push(s);
+    });
+    return Object.keys(proTag).sort().reverse().map(function (d) {
+      return { date: d, urteil: progUrteil(proTag[d]) };
+    });
+  }
+
+  // Die Kette laeuft rueckwaerts vom juengsten Tag und bricht beim ersten Tag,
+  // der nicht besteht oder ein anderes Soll-Gewicht hatte. Ohne diese Strenge
+  // wuerde eine Steigerung bestaetigt, die laengst gemacht wurde.
+  function progStatus(ex) {
+    var tage = progTage(ex);
+    if (!tage.length) return null;
+    var neu = tage[0].urteil;
+    if (!neu) return { leer: true };
+    var kette = 0;
+    for (var i = 0; i < tage.length; i++) {
+      var u = tage[i].urteil;
+      if (!u || u.weight !== neu.weight || u.avg < PROG_REPS) break;
+      kette++;
+    }
+    return { weight: neu.weight, avg: neu.avg, kette: kette, reif: kette >= PROG_NEED };
+  }
+
+  // Bewusst ohne Gewichtsvorschlag: welcher Sprung an der Maschine wirklich
+  // steckbar ist, weiss die App nicht, und die Vorbelegung des Feldes soll
+  // sich nicht hinter dem Ruecken aendern.
+  function renderProg() {
+    var el = $("progHint");
+    var st = gewaehlt ? progStatus(gewaehlt) : null;
+    if (!st) { el.innerHTML = ""; return; }
+    var txt;
+    if (st.leer) txt = "Zuletzt kein Gewicht doppelt";
+    else {
+      txt = "\u00d8 " + st.avg.toFixed(1).replace(".", ",") +
+        " bei " + fmtWeight(st.weight) + " kg \u00b7 " +
+        (st.reif ? "bereit zu steigern" : st.kette + " von " + PROG_NEED);
+    }
+    el.innerHTML = '<div class="hint prog' + (st.reif ? " ready" : "") + '">' +
+      esc(txt) + '</div>';
   }
 
   function prefillFromLast() {
@@ -2576,7 +2664,7 @@
   // ist – und im Zweifel das Loeschen und Neuanlegen des Symbols vom
   // Home-Bildschirm. Genau das loescht unter iOS den Speicher der App mit.
   // Ein Neuladen genuegt: der Service Worker holt die Seite netz-zuerst.
-  var APP_VERSION = "v27";
+  var APP_VERSION = "v28";
 
   function nachUpdateSuchen() {
     toast("Suche …");
